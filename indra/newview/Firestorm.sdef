@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+
+<!--
+    Firestorm.sdef - AppleScript / Cocoa scripting dictionary for the Firestorm
+    viewer on macOS. This is the first OS-facing adapter over the cross-platform
+    automation dispatcher (see fsautomation.h). Each command maps 1:1 to a
+    dispatcher verb; the "application" properties and the "nearby avatar" element
+    map to the dispatcher's getState / getNearbyAvatars verbs.
+
+    Objective-C++ glue: fsapplescriptcommands.mm.
+-->
+
+<dictionary title="Firestorm Terminology" xmlns:xi="http://www.w3.org/2001/XInclude">
+
+    <!-- Pull in the Standard Suite (application object, quit, count, exists...). -->
+    <xi:include href="file:///System/Library/ScriptingDefinitions/CocoaStandard.sdef"
+                xpointer="xpointer(/dictionary/suite)"/>
+
+    <suite name="Firestorm Suite" code="FSvr"
+           description="Automation commands for the Firestorm viewer.">
+
+        <enumeration name="chat type" code="Chtp">
+            <enumerator name="whisper" code="CtyW" description="Whisper (short range)."/>
+            <enumerator name="normal"  code="CtyN" description="Normal say range."/>
+            <enumerator name="shout"   code="CtyS" description="Shout (long range)."/>
+        </enumeration>
+
+        <enumeration name="location format" code="Lfmt">
+            <enumerator name="applescript" code="LfmR" description="An AppleScript record literal string; use with 'run script' (default)."/>
+            <enumerator name="json"        code="LfmJ" description="A JSON object string."/>
+            <enumerator name="lines"       code="LfmL" description="14 newline-separated values."/>
+        </enumeration>
+
+        <command name="send chat" code="FSvrSCht"
+                 description="Send a message to nearby (local) chat.">
+            <cocoa class="FSSendChatCommand"/>
+            <direct-parameter type="text" description="The message to say."/>
+            <parameter name="on channel" code="Chan" type="integer" optional="yes"
+                       description="Chat channel number (default 0).">
+                <cocoa key="channel"/>
+            </parameter>
+            <parameter name="as" code="Ctyp" type="chat type" optional="yes"
+                       description="whisper, normal, or shout (default normal).">
+                <cocoa key="chatType"/>
+            </parameter>
+        </command>
+
+        <command name="send instant message" code="FSvrSIMs"
+                 description="Send an instant message to an avatar or a group.">
+            <cocoa class="FSSendIMCommand"/>
+            <direct-parameter type="text" description="The message to send."/>
+            <parameter name="to" code="ToAv" type="text" optional="yes"
+                       description="Avatar UUID to send a personal IM to.">
+                <cocoa key="target"/>
+            </parameter>
+            <parameter name="to group" code="ToGr" type="text" optional="yes"
+                       description="Group UUID to send a group IM to.">
+                <cocoa key="group"/>
+            </parameter>
+        </command>
+
+        <command name="teleport" code="FSvrTelP"
+                 description="Teleport the agent to a region and/or coordinates.">
+            <cocoa class="FSTeleportCommand"/>
+            <parameter name="to region" code="Regn" type="text" optional="yes"
+                       description="Destination region name. Omit to use global coordinates.">
+                <cocoa key="region"/>
+            </parameter>
+            <parameter name="x" code="PosX" type="real" optional="yes"
+                       description="X coordinate (region-local with a region, otherwise global).">
+                <cocoa key="x"/>
+            </parameter>
+            <parameter name="y" code="PosY" type="real" optional="yes" description="Y coordinate.">
+                <cocoa key="y"/>
+            </parameter>
+            <parameter name="z" code="PosZ" type="real" optional="yes" description="Z coordinate.">
+                <cocoa key="z"/>
+            </parameter>
+        </command>
+
+        <command name="teleport home" code="FSvrTelH"
+                 description="Teleport the agent to their home location.">
+            <cocoa class="FSTeleportHomeCommand"/>
+        </command>
+
+        <command name="query setting" code="FSvrGSet"
+                 description="Return the current value of a viewer (debug) setting.">
+            <cocoa class="FSGetSettingCommand"/>
+            <direct-parameter type="text" description="The setting name."/>
+            <parameter name="in group" code="SGrp" type="text" optional="yes"
+                       description="Settings group (default &quot;Global&quot;).">
+                <cocoa key="group"/>
+            </parameter>
+            <result type="text" description="The setting's current value, as text."/>
+        </command>
+
+        <command name="capture location" code="FSvrLoc1"
+                 description="Return the agent's current location for saving an external landmark. Fields: region, parcel, maturity, SLURL, region_position {x,y,z}, global_position {x,y,z}, facing {x,y,z} (unit forward vector of the avatar's body), heading (compass degrees clockwise from grid north). Returns an AppleScript record literal string by default - materialise it with 'run script'. The 'as' parameter can instead pick json (a JSON object string) or lines (14 newline-separated values, split with 'paragraphs of').">
+            <cocoa class="FSGetLocationCommand"/>
+            <parameter name="as" code="Lfas" type="location format" optional="yes"
+                       description="Output encoding: applescript (default), json, or lines.">
+                <cocoa key="format"/>
+            </parameter>
+            <result type="text" description="Location, encoded per the 'as' parameter (AppleScript record literal by default)."/>
+        </command>
+
+        <command name="change setting" code="FSvrSSet"
+                 description="Change the value of a viewer (debug) setting.">
+            <cocoa class="FSSetSettingCommand"/>
+            <direct-parameter type="text" description="The setting name."/>
+            <parameter name="to" code="SVal" type="text"
+                       description="The new value as text; coerced to the setting's declared type.">
+                <cocoa key="value"/>
+            </parameter>
+            <parameter name="in group" code="SGrp" type="text" optional="yes"
+                       description="Settings group (default &quot;Global&quot;).">
+                <cocoa key="group"/>
+            </parameter>
+        </command>
+
+        <command name="dispatch command" code="FSvrDspC"
+                 description="Run a viewer SLURL app command (secondlife:///app/...).">
+            <cocoa class="FSDispatchCommand"/>
+            <direct-parameter type="text"
+                              description="Command name (e.g. &quot;agent&quot;) or a full secondlife:///app/... URL."/>
+            <parameter name="with parameters" code="DPrm" optional="yes"
+                       description="Additional path parameters for the command.">
+                <cocoa key="parameters"/>
+                <type type="text" list="yes"/>
+            </parameter>
+            <result type="boolean" description="True if the command was handled."/>
+        </command>
+
+        <command name="run gesture" code="FSvrRGst"
+                 description="Trigger an active gesture by name or trigger text.">
+            <cocoa class="FSRunGestureCommand"/>
+            <direct-parameter type="text" description="Gesture name or trigger text."/>
+        </command>
+
+        <command name="call ui action" code="FSvrUiCl"
+                 description="Invoke a viewer UI action by its commit-callback registry name.">
+            <cocoa class="FSCallUIActionCommand"/>
+            <direct-parameter type="text" description="The registered action name."/>
+            <parameter name="with parameter" code="UPrm" type="text" optional="yes"
+                       description="Optional parameter passed to the action.">
+                <cocoa key="parameter"/>
+            </parameter>
+        </command>
+
+        <class-extension extends="application" description="Firestorm viewer state.">
+            <property name="logged in" code="FSpL" type="boolean" access="r"
+                      description="Whether the agent is logged in and in-world.">
+                <cocoa key="fsLoggedIn"/>
+            </property>
+            <property name="current region" code="FSpR" type="text" access="r"
+                      description="Name of the region the agent is currently in.">
+                <cocoa key="fsCurrentRegion"/>
+            </property>
+            <property name="avatar name" code="FSpN" type="text" access="r"
+                      description="The agent's user name (or display name).">
+                <cocoa key="fsAvatarName"/>
+            </property>
+            <property name="avatar legacy name" code="FSpG" type="text" access="r"
+                      description="The agent's legacy &quot;First Last&quot; name.">
+                <cocoa key="fsAvatarLegacyName"/>
+            </property>
+            <property name="avatar key" code="FSpK" type="text" access="r"
+                      description="The agent's UUID.">
+                <cocoa key="fsAvatarKey"/>
+            </property>
+            <property name="agent position" code="FSpP" access="r"
+                      description="The agent's global position as a list {x, y, z}.">
+                <cocoa key="fsPosition"/>
+                <type type="real" list="yes"/>
+            </property>
+            <property name="agent region position" code="FSpr" access="r"
+                      description="The agent's region-local position as a list {x, y, z}.">
+                <cocoa key="fsRegionPosition"/>
+                <type type="real" list="yes"/>
+            </property>
+            <property name="location string" code="FSpS" type="text" access="r"
+                      description="Formatted &quot;Parcel, Region (x, y, z) - Maturity&quot; string.">
+                <cocoa key="fsLocationString"/>
+            </property>
+            <element type="nearby avatar" access="r">
+                <cocoa key="fsNearbyAvatars"/>
+            </element>
+        </class-extension>
+
+        <class name="nearby avatar" code="FSNa" plural="nearby avatars"
+               description="An avatar within draw distance of the agent.">
+            <cocoa class="FSNearbyAvatarScriptObject"/>
+            <property name="name" code="pnam" type="text" access="r"
+                      description="The avatar's user name.">
+                <cocoa key="fsName"/>
+            </property>
+            <property name="avatar key" code="FSnK" type="text" access="r"
+                      description="The avatar's UUID.">
+                <cocoa key="fsAvKey"/>
+            </property>
+            <property name="global position" code="FSnG" access="r"
+                      description="Global position as a list {x, y, z}.">
+                <cocoa key="fsGlobalPosition"/>
+                <type type="real" list="yes"/>
+            </property>
+            <property name="region position" code="FSnR" access="r"
+                      description="Region-local position as a list {x, y, z}.">
+                <cocoa key="fsRegionPosition"/>
+                <type type="real" list="yes"/>
+            </property>
+            <property name="distance" code="FSnD" type="real" access="r"
+                      description="Distance from the agent, in metres.">
+                <cocoa key="fsDistance"/>
+            </property>
+        </class>
+
+    </suite>
+</dictionary>

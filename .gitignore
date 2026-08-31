@@ -30,6 +30,10 @@ debian/secondlife-viewer*
 indra/.distcc
 indra/out/*
 
+# Python virtualenv for autobuild toolchain (see doc/building_macos.md)
+.venv/
+venv/
+
 indra/packages/*
 build-vc*/
 indra/CMakeFiles

@@ -103,6 +103,7 @@ set(viewer_SOURCE_FILES
     fsareasearch.cpp
     fsareasearchmenu.cpp
     fsassetblacklist.cpp
+    fsautomation.cpp
     fsavatarrenderpersistence.cpp
     fsavatarsearchmenu.cpp
     fsblocklistmenu.cpp
@@ -961,6 +962,7 @@ set(viewer_HEADER_FILES
     fsareasearch.h
     fsareasearchmenu.h
     fsassetblacklist.h
+    fsautomation.h
     fsavatarrenderpersistence.h
     fsavatarsearchmenu.h
     fsblocklistmenu.h
@@ -1886,6 +1888,19 @@ if (DARWIN)
     COMPILE_FLAGS "-fmodules -fcxx-modules -Wno-nullability-completeness"
     )
 
+  # macOS AppleScript adapter over the cross-platform automation dispatcher
+  # (fsautomation.*). fsapplescriptadapter.cpp is plain C++ (LLSD marshalling);
+  # fsapplescriptcommands.mm is the Objective-C++ Cocoa-scripting glue.
+  LIST(APPEND viewer_SOURCE_FILES fsapplescriptadapter.cpp)
+  LIST(APPEND viewer_HEADER_FILES fsapplescriptadapter.h)
+  LIST(APPEND viewer_SOURCE_FILES fsapplescriptcommands.mm)
+  set_source_files_properties(
+    fsapplescriptcommands.mm
+    PROPERTIES
+    SKIP_PRECOMPILE_HEADERS TRUE
+    COMPILE_FLAGS "-fmodules -fcxx-modules -Wno-nullability-completeness"
+    )
+
 # [FS] Growl libs
   LIST(APPEND viewer_SOURCE_FILES
         growlmanager.cpp
@@ -1902,6 +1917,7 @@ if (DARWIN)
   set(viewer_RESOURCE_FILES
     firestorm_icon.icns
     Info-Firestorm.plist
+    Firestorm.sdef
     Firestorm.xib
     # CMake doesn't seem to support Xcode language variants well just yet
     English.lproj/InfoPlist.strings

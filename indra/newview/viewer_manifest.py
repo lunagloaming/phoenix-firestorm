@@ -1583,6 +1583,10 @@ class Darwin_x86_64_Manifest(ViewerManifest):
                 self.path("featuretable_mac.txt")
                 self.path("cube.dae")
 
+                # AppleScript / Cocoa scripting dictionary; referenced by the
+                # OSAScriptingDefinition key in Info-Firestorm.plist.
+                self.path("Firestorm.sdef")
+
                 self.path("VivoxAUP.txt")
                 self.path("LGPL-license.txt")
                 with self.prefix(src=pkgdir,dst=""):

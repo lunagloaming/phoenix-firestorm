@@ -86,5 +86,9 @@
 	<string>${MACOSX_BUNDLE_NSMAIN_NIB_FILE}</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+	<key>NSAppleScriptEnabled</key>
+	<string>YES</string>
+	<key>OSAScriptingDefinition</key>
+	<string>Firestorm.sdef</string>
 	</dict>
 </plist>
