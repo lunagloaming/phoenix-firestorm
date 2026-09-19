@@ -1,0 +1,45 @@
+Linux build environment update
+Firestorm Viewer - The Phoenix Firestorm Project Inc.
+https://www.firestormviewer.org/linux-build-environment-update/
+
+July 5, 2026 | Tools and Technology, Viewer Information | 26 Comments
+By Beq Janus, 2 min read
+
+This post applies only to Linux users and primarily affects those who run our
+Linux builds on different distributions. If none of that means anything to
+you, you almost certainly do not need to read the rest of this post.
+
+Still here? OK... A few technical terms for those unfamiliar with the
+software development process we follow. This post mentions details about
+Linux builds and kernels, and it also uses a few developer terms, such as
+build servers and "GitHub runners". For clarity, the "build servers" are the
+machines we use to build the Viewer binaries that you then download. Those
+machines are hosted and maintained by GitHub. The operating systems and all
+associated tools and packages for building software are collectively known
+as "GitHub runner images".
+
+We will shortly be moving our Linux build servers from Ubuntu 22.04 LTS to
+Ubuntu 24.04 LTS. This follows GitHub's deprecation schedule for the Ubuntu
+22.04 runner images, now that newer LTS runner images, including Ubuntu
+26.04, are available. By introducing it into the current beta cycle now, we
+can ensure we have enough time to identify any issues before the official
+end-of-life period starts in September. The full GitHub notice can be found
+here (link in original post).
+
+The GitHub Ubuntu 24.04 build image is currently based on Ubuntu 24.04.4 LTS
+and uses a 6.17 Azure Linux kernel. More importantly for compatibility,
+Ubuntu 24.04 updates the build toolchain to GCC 14 and glibc 2.39.
+
+For most users, this should be uneventful, but Linux users running our
+Ubuntu-built binaries on older distributions may need to check their system
+libraries. Older LTS or enterprise-style distributions may not provide a new
+enough glibc or libstdc++ to run binaries built on Ubuntu 24.04. If you see
+errors such as missing GLIBC_2.39 or newer GLIBCXX symbols, your
+distribution is likely too old for these builds, and you may need to update
+your system, use a distro-specific package where available, or build
+locally.
+
+This change only affects the Linux build environment; it does not change
+your local graphics drivers, Mesa stack, or runtime kernel.
+
+Tags: github, linux

@@ -1,0 +1,68 @@
+# Build environment matching Firestorm's GitHub Actions Linux runner exactly.
+#
+# Source of truth for the package list and toolchain version:
+#   .github/workflows/build_viewer.yml ("Install GCC 14.1" and
+#   "Install required Ubuntu packages" steps)
+# and the project's own announcement of the runner migration:
+#   https://www.firestormviewer.org/linux-build-environment-update/
+#     -> GitHub Ubuntu runners moved from 22.04 to 24.04.4 LTS,
+#        toolchain bumped to GCC 14, glibc 2.39.
+#
+# This image only provides the toolchain + libraries. The viewer source
+# and fs-build-variables are mounted in at runtime (see run.sh) so the
+# image doesn't go stale relative to your checkout.
+
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base tooling not preinstalled on a bare ubuntu:24.04 image but present
+# on the GitHub-hosted ubuntu-24.04 runner image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    ca-certificates \
+    curl \
+    wget \
+    software-properties-common \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python-is-python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# GCC 14.1, exactly as build_viewer.yml installs it for the Linux job.
+RUN for i in 1 2 3; do \
+        add-apt-repository -y ppa:ubuntu-toolchain-r/test && break || sleep 10; \
+    done \
+    && apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 install -y gcc-14 g++-14 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 140 \
+         --slave /usr/bin/g++ g++ /usr/bin/g++-14 \
+    && rm -rf /var/lib/apt/lists/*
+ENV CC=gcc-14 CXX=g++-14
+
+# The exact dependency list from the "Install required Ubuntu packages"
+# step in build_viewer.yml (not doc/building_linux.md, which still lists
+# the older 22.04/gcc-11 set).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-setuptools \
+    mesa-common-dev \
+    libgl1-mesa-dev \
+    libxinerama-dev \
+    libxrandr-dev \
+    libpulse-dev \
+    libglu1-mesa-dev \
+    libfreetype6-dev \
+    libfontconfig1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Autobuild + its Python deps (llbase, llsd), pinned by the repo's own
+# requirements.txt so the version matches what CI uses.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --break-system-packages -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
+
+WORKDIR /work
+CMD ["/bin/bash"]
