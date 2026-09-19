@@ -41,6 +41,20 @@ Firestorm's PR guidelines impose requirements beyond normal good practice — fo
 - `autobuild build` actually reconfigures from scratch on *every* invocation (not just when unconfigured — checked the autobuild source, `autobuild_tool_build.py` calls `_configure_a_configuration` unconditionally unless `--no-configure` is passed). This is why channel naming (`--chan`) has to be passed on every build rather than set once: each podman container also gets a fresh random hostname, so `configure_firestorm.sh`'s hostname-based default channel changes on every single build unless overridden.
 - Incremental builds genuinely work: rerunning only recompiles `llversioninfo.cpp.o` and `llappviewerlinux.cpp.o` (they embed the build ID, so they always touch) plus relink/repackage — verified by object-file mtimes and the `CONFIG: false` line in `build-linux-x86_64/logs/build_linux.log`.
 
+### Branching: keep podman tooling out of upstream PRs
+
+This `podman` branch (this file included) must never reach `upstream` — it's local-only dev tooling, not a contribution. Feature branches still need it for local builds though, so:
+
+- Branch feature work off `podman`, not `master`: `git checkout -b feature/<name> podman`. This gives the working tree the build scripts immediately.
+- Commit feature work on top as normal. Do **not** push `feature/<name>` itself to `origin`/PR it upstream — it carries the podman-tooling commits in its history.
+- Before opening a PR, cut a clean branch that replays only the feature commits onto current `master`, dropping the podman commits entirely:
+  ```
+  git rebase --onto master podman feature/<name> -b feature/<name>-upstream
+  git push origin feature/<name>-upstream
+  ```
+  Open the PR from `feature/<name>-upstream`. Keep developing on `feature/<name>` locally; only the rebased branch ever faces upstream.
+- If `podman` itself gains new commits after a feature branch was cut, `git rebase --onto master podman feature/<name>` still works the same way — it only cares about the commit range, not which specific commits are in `podman` at rebase time.
+
 ### Expected build noise (not bugs)
 
 - `#pragma message "Compiling with libresolv stubs"` in `indra/newview/llappviewerlinux.cpp` fires whenever glibc ≥ 2.34 (true for the Ubuntu 24.04 environment). It's an informational compiler note, not a warning — the code defines `__res_nquery`/`__dn_expand` shims because glibc 2.34 stopped exporting those internal aliases that some bundled third-party lib expects.
