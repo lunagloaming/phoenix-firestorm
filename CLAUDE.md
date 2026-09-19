@@ -2,6 +2,29 @@
 
 Fork of [FirestormViewer/phoenix-firestorm](https://github.com/FirestormViewer/phoenix-firestorm). `origin` is this fork, `upstream` is the real project. Check `git rev-list --left-right --count upstream/master...master` before assuming local history has diverged — it may not have.
 
+## Contributing (per CONTRIBUTING.md)
+
+Firestorm's PR guidelines impose requirements beyond normal good practice — follow these when writing commits/PRs in this repo, not just the general CLAUDE.md/system conventions:
+
+- **Commit/PR title**: reference the JIRA issue in the header, e.g. `[FIRE-12345] prevent click detaching head`. If there's no JIRA issue (e.g. this is exploratory/local-only work like the podman branch), it's fine to omit — the requirement is for real contributions headed upstream.
+- **Preserve upstream (LL) code in a comment when modifying it.** This is the one that's easy to forget and not standard practice elsewhere: when changing code that Linden Lab maintains upstream (i.e. not FS-only files, not RLV code, not OpenSim-only code), comment out the original LL lines rather than deleting them, wrapped in an `<FS:LG>` block so future upstream merges can diff LL's changes against what FS did on top:
+  ```c++
+  // <FS:LG> [FIRE-12345] prevent click detaching head
+  // int buggy_code = TRUE;
+  // LL_WARN() << "This code is buggy" << LL_ENDL;
+  bool fixed_code = true;
+  LL_DEBUG() << "I fixed this" << LL_ENDL;
+  // </FS:LG>
+  ```
+  For a single-line change, the shorthand trailing-comment form is acceptable:
+  ```c++
+  bool break_stuff = false; // </FS:LG> [FIRE-23456] don't break stuff.
+  ```
+  If the line being changed is already inside an existing `<FS>` block, don't nest a new one — just keep the existing block's comments aligned with the update.
+- **No `<FS>` tags needed** for FS-created files, RLV-specific code, or OpenSim-only code — the preservation requirement is specifically about being able to diff against upstream LL changes.
+- **PR description**: explain why the change is needed (not just what), and include testing steps/environment. If a JIRA ticket already covers the "why," a short summary is enough — no need to duplicate it.
+- **New features**: suggest what should be added to the FS Wiki so users understand the feature.
+
 ## Linux build environment
 
 `doc/building_linux.md` is stale: it describes Ubuntu 22.04 LTS + GCC 11. The **actual** current target (per `.github/workflows/build_viewer.yml` and https://www.firestormviewer.org/linux-build-environment-update/, July 2026) is **Ubuntu 24.04.4 LTS + GCC 14 + glibc 2.39**, following GitHub's runner deprecation. Don't trust the doc's package list or compiler version over the workflow file — `build_viewer.yml`'s "Install required Ubuntu packages" and "Install GCC 14.1" steps are the source of truth.
