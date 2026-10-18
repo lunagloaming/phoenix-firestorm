@@ -1,3 +1,71 @@
+# MultiBox branch (`multibox-memory`)
+
+**Intent:** make running two or more Firestorm instances at the same time behave well on Linux. The typical case is a main avatar and an alt in the same crowded region, and **memory comes first**.
+
+What prompted it:
+- On a 32 GB machine, each viewer reached about 10 GB within a minute of arriving in a crowded region.
+- Together they pushed about 25 GB of viewer memory into zram swap, and neither viewer noticed: free memory still *looked* fine.
+- GPU memory was nearly full, because each instance budgets as if it owns the whole GPU.
+- The second instance (which opens the texture cache read-only) re-downloaded everything the first had already cached.
+
+A single-process, multi-session viewer was considered and rejected. Session state is global throughout the code (hundreds of singletons and globals), so it would mean rewriting most of the viewer. These changes get the practical benefits (shared caches, coordinated memory use) across separate processes instead.
+
+### Changes (high level)
+
+**Phase 1: safety and memory awareness**
+- **Texture cache, read-only (second) instance:**
+  - It no longer shows the wrong texture when the owning instance has reused a cache slot. The same check covers the fast cache.
+  - It never deletes texture files from a cache it doesn't own.
+  - It re-reads the cache index after a miss, so it can use textures the owning instance cached after it started.
+- **Linux memory pressure:** the kernel's memory-pressure figure (`/proc/pressure/memory`) now triggers texture downscaling. With compressed swap, free memory alone can look fine while the system thrashes.
+- **Disk cache:** whole asset files are written to a temporary name and renamed into place, so an instance sharing the cache never reads a half-written file.
+- **Diagnostics:** viewer and thread-pool threads are named on Linux, so `ps -L` / `top -H` show which thread is which.
+- **Login screen:** a small "MultiBox: *profile* profile" notice appears when the viewer is launched with a tuning profile. Its tooltip lists the session-only `--set` overrides.
+
+**Phase 2: instance slots**
+- **Instance slots:** each viewer locks the lowest free `instance_<n>.lock` in the cache directory it uses. Slot 0 owns the shared caches; other slots use them read-only. Ownership follows the cache directory rather than the user directory, so:
+  - Instances with separate user directories but one cache location no longer both write it.
+  - Instances with separate cache locations each own theirs.
+- **Object cache:** each secondary instance gets its own writable `objectcache_<n>`, instead of a read-only shared one that forced full object updates in every region.
+- **Instance-aware defaults:** the autodetected texture GPU-memory budget and the automatic image-decode thread count are divided by the number of running instances. Explicit settings are left alone.
+- **Settings on exit:** a second instance sharing the user directory no longer overwrites `settings.xml` when it exits. Changes made in Preferences are still saved when it is closed with OK.
+
+**Outside the viewer: Main/Alt launchers**
+- `main` and `alt` modes pass session-only `--set` overrides (not saved to `settings.xml`).
+- The Alt profile trades quality for memory: a lower GPU budget, a lower avatar-complexity limit, fewer fully rendered avatars, lower LOD, shorter draw distance and a frame cap. Its whole process is pinned to the efficiency cores on hybrid CPUs.
+- The launchers use a separate user-data directory (`FIRESTORM_X64_USER_DIR`), so they don't disturb a normal Firestorm install.
+
+### New settings
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `FSReadOnlyCacheRefreshSecs` | 15 | Minimum interval between index re-reads in a read-only texture cache (0 disables) |
+| `FSLinuxMemPressureThreshold` | 10.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
+| `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
+
+### Status
+- Both phases build cleanly with GCC 14 on Ubuntu 24.04 (`ReleaseFS_open`).
+- Cross-process lock behaviour was checked against the bundled APR.
+- **Not yet tested in a running viewer.** Pending: baseline-vs-branch memory and swap comparison with Main and Alt in a crowded region. Also to check: slot and refresh log lines, Alt's CPU affinity and thread names, `objectcache_1/` filling in, and the login notice.
+- Expected once, on first launch against caches written by an official build: the texture cache is purged, because this build decodes with OpenJPEG instead of KDU.
+
+### Building this branch on Linux
+`doc/building_linux.md` still describes Ubuntu 22.04 with GCC 11, but current code needs **GCC 14**, the toolchain the official builds now use on Ubuntu 24.04. With an Ubuntu 24.04 build environment, `gcc-14`/`g++-14` installed and `CC=gcc-14 CXX=g++-14`:
+
+```
+autobuild configure -A 64 -c ReleaseFS_open -- --ninja --jobs 10 --chan=MultiBox -DLL_TESTS:BOOL=FALSE
+autobuild build     -A 64 -c ReleaseFS_open --no-configure -- --ninja --jobs 10 --chan=MultiBox -DLL_TESTS:BOOL=FALSE
+```
+
+### Not done (possible future work)
+- Per-thread-pool placement on performance or efficiency cores (beyond the launcher's whole-process pinning for Alt).
+- Idle scheduling priority for housekeeping threads such as cache purging.
+- Multiple writers to the shared texture cache index. Its fixed-slot format is inherently single-writer.
+
+Changes in the source are marked `<FS:Luna Witch>`.
+
+---
+
 <img align="left" width="100" height="100" src="doc/firestorm_256.png" alt="Logo of Firestorm viewer"/>
 
 **[Firestorm](https://www.firestormviewer.org) is a free client for 3D virtual worlds such as Second Life and various OpenSim worlds where users can create, connect and chat with others from around the world.**
