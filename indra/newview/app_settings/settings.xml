@@ -2959,6 +2959,39 @@
       <key>Value</key>
       <real>70.0</real>
     </map>
+    <key>FSReadOnlyCacheRefreshSecs</key>
+    <map>
+      <key>Comment</key>
+      <string>When another viewer instance owns the texture cache (this one is read-only), re-read its index at most this often (seconds) after a cache miss, so textures it cached since this instance started can be used. 0 disables.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>U32</string>
+      <key>Value</key>
+      <integer>15</integer>
+    </map>
+    <key>FSLinuxMemPressureThreshold</key>
+    <map>
+      <key>Comment</key>
+      <string>Linux only: treat system memory as low when /proc/pressure/memory "some avg10" exceeds this percentage, even if free memory looks sufficient (e.g. with zram swap). 0 disables.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>10.0</real>
+    </map>
+    <key>FSMultiBoxProfile</key>
+    <map>
+      <key>Comment</key>
+      <string>Name of the multi-instance tuning profile this viewer was launched with (set by the launcher via --set; shown on the login screen). Empty for a normal launch.</string>
+      <key>Persist</key>
+      <integer>0</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
     <key>CacheLocation</key>
     <map>
       <key>Comment</key>

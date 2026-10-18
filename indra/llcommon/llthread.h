@@ -160,5 +160,7 @@ public:
 
 extern LL_COMMON_API bool assert_main_thread();
 extern LL_COMMON_API bool on_main_thread();
+// <FS:Luna Witch> Name the calling thread for OS tools (ps -L, top -H, perf); no-op where unsupported
+extern LL_COMMON_API void ll_set_current_thread_name(const std::string& name);
 
 #endif // LL_LLTHREAD_H

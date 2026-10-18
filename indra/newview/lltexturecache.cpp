@@ -797,6 +797,9 @@ LLTextureCache::LLTextureCache(bool threaded)
       mFastCacheMutex(),
       mHeaderAPRFile(NULL),
       mReadOnly(true), //do not allow to change the texture cache until setReadOnly() is called.
+      mReadOnlyRefreshSecs(0), // <FS:Luna Witch/>
+      mHeaderEntriesMTime(0), // <FS:Luna Witch/>
+      mHeaderEntriesFileSize(0), // <FS:Luna Witch/>
       mTexturesSizeTotal(0),
       mDoPurge(false),
       mFastCachep(NULL),
@@ -1042,6 +1045,20 @@ S64 LLTextureCache::initCache(ELLPath location, S64 max_size, bool texture_cache
     readHeaderCache();
     purgeTextures(true); // calc mTexturesSize and make some room in the texture cache if we need it
 
+    // <FS:Luna Witch> Read here on the main thread; lookups that use it run on worker threads
+    if (mReadOnly)
+    {
+        mReadOnlyRefreshSecs = gSavedSettings.getU32("FSReadOnlyCacheRefreshSecs");
+        llstat entries_stat;
+        if (LLFile::stat(mHeaderEntriesFileName, &entries_stat) == 0)
+        {
+            mHeaderEntriesMTime = entries_stat.st_mtime;
+            mHeaderEntriesFileSize = entries_stat.st_size;
+        }
+        mReadOnlyRefreshTimer.reset();
+    }
+    // </FS:Luna Witch>
+
     llassert_always(getPending() == 0) ; //should not start accessing the texture cache before initialized.
     openFastCache(true);
 
@@ -1199,6 +1216,25 @@ S32 LLTextureCache::openAndReadEntry(const LLUUID& id, Entry& entry, bool create
         {
             readEntryFromHeaderImmediately(idx, entry) ;
         }
+        // <FS:Luna Witch> A read-only instance's index is a snapshot; the instance that owns the cache
+        // may have since evicted this texture and reused its slot for another one (or freed it).
+        // Treat that as a miss rather than serving the other texture's data under this id.
+        if (idx >= 0 && entry.mID != id)
+        {
+            LL_DEBUGS("TextureCache") << "Stale header index for " << id << ": slot " << idx << " now holds " << entry.mID << LL_ENDL;
+            {
+                LLMutexLock lock(&mHeaderIDMapMutex);
+                mHeaderIDMap.erase(id);
+            }
+            size_map_t::iterator size_iter = mTexturesSizeMap.find(id);
+            if (size_iter != mTexturesSizeMap.end())
+            {
+                mTexturesSizeTotal -= size_iter->second;
+                mTexturesSizeMap.erase(size_iter);
+            }
+            return -1;
+        }
+        // </FS:Luna Witch>
         if(entry.mImageSize <= entry.mBodySize)//it happens on 64-bit systems, do not know why
         {
             LL_WARNS() << "corrupted entry: " << id << " entry image size: " << entry.mImageSize << " entry body size: " << entry.mBodySize << LL_ENDL ;
@@ -1928,12 +1964,45 @@ S32 LLTextureCache::getHeaderCacheEntry(const LLUUID& id, Entry& entry)
     LL_PROFILE_ZONE_SCOPED_CATEGORY_TEXTURE;
     LLMutexLock lock(&mHeaderMutex);
     S32 idx = openAndReadEntry(id, entry, false);
+    // <FS:Luna Witch> A read-only instance can still find textures the owning instance cached after we started
+    if (idx < 0 && mReadOnly && refreshReadOnlyHeaders())
+    {
+        idx = openAndReadEntry(id, entry, false);
+    }
+    // </FS:Luna Witch>
     if (idx >= 0)
     {
         updateEntryTimeStamp(idx, entry); // updates time
     }
     return idx;
 }
+
+// <FS:Luna Witch> Re-read the header index if the owning instance changed it, at most every
+// FSReadOnlyCacheRefreshSecs. Returns true if the index was re-read. mHeaderMutex is locked before calling this.
+bool LLTextureCache::refreshReadOnlyHeaders()
+{
+    if (!mReadOnly || mReadOnlyRefreshSecs == 0 || mReadOnlyRefreshTimer.getElapsedTimeF32() < (F32)mReadOnlyRefreshSecs)
+    {
+        return false;
+    }
+    mReadOnlyRefreshTimer.reset();
+
+    llstat entries_stat;
+    if (LLFile::stat(mHeaderEntriesFileName, &entries_stat) != 0
+        || (entries_stat.st_mtime == mHeaderEntriesMTime && (S64)entries_stat.st_size == mHeaderEntriesFileSize))
+    {
+        return false;
+    }
+    mHeaderEntriesMTime = entries_stat.st_mtime;
+    mHeaderEntriesFileSize = entries_stat.st_size;
+
+    LLTimer timer;
+    readHeaderCache();
+    LL_INFOS("TextureCache") << "Refreshed read-only texture header index: " << mHeaderEntriesInfo.mEntries << " entries in "
+                             << timer.getElapsedTimeF32() * 1000.f << " ms" << LL_ENDL;
+    return true;
+}
+// </FS:Luna Witch>
 
 // Writes imagesize to the header, updates timestamp
 S32 LLTextureCache::setHeaderCacheEntry(const LLUUID& id, Entry& entry, S32 imagesize, S32 datasize)
@@ -2082,6 +2151,25 @@ LLPointer<LLImageRaw> LLTextureCache::readFromFastCache(const LLUUID& id, S32& d
 
         offset = iter->second;
     }
+
+    // <FS:Luna Witch> Fast cache records carry no id, so a read-only instance checks the slot still belongs to
+    // this texture (see openAndReadEntry). Called on the main thread: skip rather than wait on a header refresh.
+    if (mReadOnly)
+    {
+        if (!mHeaderMutex.trylock())
+        {
+            return NULL;
+        }
+        S32 idx = (S32)offset;
+        Entry entry;
+        readEntryFromHeaderImmediately(idx, entry);
+        mHeaderMutex.unlock();
+        if (idx < 0 || entry.mID != id)
+        {
+            return NULL;
+        }
+    }
+    // </FS:Luna Witch>
     offset *= TEXTURE_FAST_CACHE_ENTRY_SIZE;
 
     U8* data;
@@ -2367,7 +2455,10 @@ void LLTextureCache::removeEntry(S32 idx, Entry& entry, std::string& filename)
         mFreeList.insert(idx);
     }
 
-    if (file_maybe_exists)
+    // <FS:Luna Witch> Never delete files from a cache this instance doesn't own; the owning instance may still use them
+    //if (file_maybe_exists)
+    if (file_maybe_exists && !mReadOnly)
+    // </FS:Luna Witch>
     {
         LLAPRFile::remove(filename, mHeaderAPRFilePoolp);
     }

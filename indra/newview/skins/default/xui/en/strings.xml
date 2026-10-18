@@ -3385,4 +3385,8 @@ Your current position: [AVATAR_POS]
 
   <!-- <FS:TJ> Launch new instance option from macOS dock> -->
   <string name="FSMacOSNewViewerInstance">New Viewer Instance</string>
+
+  <!-- <FS:Luna Witch> Multi-instance tuning profile notice on the login screen -->
+  <string name="MultiBoxProfileLoginText">MultiBox: [PROFILE] profile</string>
+  <string name="MultiBoxProfileLoginTooltip">This viewer was launched with a multi-instance tuning profile. Session-only setting overrides:</string>
 </strings>

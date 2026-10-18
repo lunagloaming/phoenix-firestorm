@@ -21,6 +21,7 @@
 #include "llerror.h"
 #include "llevents.h"
 #include "llsd.h"
+#include "llthread.h" // <FS:Luna Witch/> ll_set_current_thread_name()
 #include "stringize.h"
 
 #include <boost/fiber/algo/round_robin.hpp>
@@ -79,6 +80,7 @@ void LL::ThreadPoolBase::start()
         mThreads.emplace_back(tname, [this, tname]()
             {
                 LL_PROFILER_SET_THREAD_NAME(tname.c_str());
+                ll_set_current_thread_name(tname); // <FS:Luna Witch/>
                 LL_INFOS("THREAD") << "Started thread " << tname << LL_ENDL;
                 run(tname);
             });

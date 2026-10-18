@@ -312,6 +312,24 @@ FSPanelLogin::FSPanelLogin(const LLRect &rect,
     LLTextBox* forgot_password_text = getChild<LLTextBox>("forgot_password_text");
     forgot_password_text->setClickedCallback(onClickForgotPassword, NULL);
 
+    // <FS:Luna Witch> Show which multi-instance tuning profile this viewer was launched with, if any
+    const std::string multibox_profile = gSavedSettings.getString("FSMultiBoxProfile");
+    if (LLTextBox* multibox_profile_text = findChild<LLTextBox>("multibox_profile_text"); multibox_profile_text && !multibox_profile.empty())
+    {
+        LLStringUtil::format_map_t args;
+        args["[PROFILE]"] = multibox_profile;
+        multibox_profile_text->setText(LLTrans::getString("MultiBoxProfileLoginText", args));
+
+        std::string tooltip = LLTrans::getString("MultiBoxProfileLoginTooltip");
+        for (const std::string& setting_override : LLAppViewer::instance()->getCommandLineOverrides())
+        {
+            tooltip += "\n" + setting_override;
+        }
+        multibox_profile_text->setToolTip(tooltip);
+        multibox_profile_text->setVisible(true);
+    }
+    // </FS:Luna Witch>
+
     loadLoginPage();
 
     LLComboBox* username_combo(getChild<LLComboBox>("username_combo"));

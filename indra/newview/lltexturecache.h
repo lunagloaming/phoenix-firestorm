@@ -183,6 +183,7 @@ private:
     S32 setHeaderCacheEntry(const LLUUID& id, Entry& entry, S32 imagesize, S32 datasize);
     void writeUpdatedEntries() ;
     void updatedHeaderEntriesFile() ;
+    bool refreshReadOnlyHeaders(); // <FS:Luna Witch/> Pick up entries written by the instance that owns the cache
     void lockHeaders() { mHeaderMutex.lock(); }
     void unlockHeaders() { mHeaderMutex.unlock(); }
 
@@ -216,6 +217,13 @@ private:
     responder_list_t mCompletedList;
 
     bool mReadOnly;
+
+    // <FS:Luna Witch> A read-only instance periodically re-reads the header index written by the owning instance
+    U32 mReadOnlyRefreshSecs;
+    LLFrameTimer mReadOnlyRefreshTimer;
+    time_t mHeaderEntriesMTime;
+    S64 mHeaderEntriesFileSize;
+    // </FS:Luna Witch>
 
     std::string mCacheParentDirName;
 

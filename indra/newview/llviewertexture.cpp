@@ -714,6 +714,67 @@ U32Megabytes getFreeCommitMemory()
 #endif
 // </FS:Beq>
 
+// <FS:Luna Witch> Linux memory pressure (PSI). With compressed swap such as zram, free memory can look
+// fine while the system is thrashing, so also look at how much time tasks are stalled waiting on memory.
+#if LL_LINUX
+// Returns the "some avg10" percentage from /proc/pressure/memory, or a negative value if unavailable.
+F32 get_linux_memory_pressure()
+{
+    static LLFrameTimer timer;
+    static F32 pressure_res = -1.f;
+    static bool first_call = true;
+
+    if (!first_call && timer.getElapsedTimeF32() < MEMORY_CHECK_WAIT_TIME) //call this once per second.
+    {
+        return pressure_res;
+    }
+
+    first_call = false;
+    timer.reset();
+
+    pressure_res = -1.f;
+    if (LLFILE* fp = LLFile::fopen("/proc/pressure/memory", "r"))
+    {
+        F32 avg10 = 0.f;
+        if (fscanf(fp, "some avg10=%f", &avg10) == 1)
+        {
+            pressure_res = avg10;
+        }
+        LLFile::close(fp);
+    }
+    return pressure_res;
+}
+
+F32 get_linux_memory_pressure_threshold()
+{
+    static LLCachedControl<F32> pressure_threshold(gSavedSettings, "FSLinuxMemPressureThreshold", 10.f);
+    return pressure_threshold;
+}
+
+bool is_linux_memory_pressure_high()
+{
+    static bool was_high = false;
+    const F32 threshold = get_linux_memory_pressure_threshold();
+    const F32 pressure = get_linux_memory_pressure();
+    const bool is_high = threshold > 0.f && pressure > threshold;
+    if (is_high != was_high)
+    {
+        LL_INFOS("TextureMemory") << "Linux memory pressure " << (is_high ? "high" : "back below threshold") << ": some avg10="
+                                  << pressure << "% (threshold " << threshold << "%)" << LL_ENDL;
+        was_high = is_high;
+    }
+    return is_high;
+}
+
+bool is_linux_memory_pressure_recovered()
+{
+    // Require pressure to fall well below the trigger level before restoring texture quality.
+    const F32 threshold = get_linux_memory_pressure_threshold();
+    return threshold <= 0.f || get_linux_memory_pressure() < threshold * 0.5f;
+}
+#endif
+// </FS:Luna Witch>
+
 S32Megabytes get_render_free_main_memory_treshold()
 {
     static LLCachedControl<U32> min_free_main_memory(gSavedSettings, "RenderMinFreeMainMemoryThreshold", 512);
@@ -742,6 +803,10 @@ bool LLViewerTexture::isSystemMemoryLow()
 #if LL_WINDOWS
     const bool commit_low = getFreeCommitMemory() < get_render_free_commit_memory_threshold();
     return physical_low || commit_low;
+// <FS:Luna Witch> Linux memory pressure
+#elif LL_LINUX
+    return physical_low || is_linux_memory_pressure_high();
+// </FS:Luna Witch>
 #else
     return physical_low;
 #endif
@@ -776,6 +841,10 @@ bool LLViewerTexture::isSystemMemoryRecovered()
 #if LL_WINDOWS
     return physical_recovered &&
         getFreeCommitMemory() > get_render_free_commit_memory_threshold() + margin;
+// <FS:Luna Witch> Linux memory pressure
+#elif LL_LINUX
+    return physical_recovered && is_linux_memory_pressure_recovered();
+// </FS:Luna Witch>
 #else
     return physical_recovered;
 #endif
