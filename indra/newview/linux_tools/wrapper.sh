@@ -64,7 +64,10 @@ exportMutliArchDRIPath() {
 ##   can verify not to be present in earlier versions, comment out the
 ##   next line. Thanks to Jira user Pazako Karu on FIRE-33398 to make us
 ##   aware of this option!
-export __GL_THREADED_OPTIMIZATIONS=1
+# <FS:Luna Witch> Keep a value set by the caller, so it can be turned off per instance: the
+# NVIDIA driver allocated ~4 GB of system memory on its own threads in a crowded region.
+export __GL_THREADED_OPTIMIZATIONS="${__GL_THREADED_OPTIMIZATIONS:-1}"
+# </FS:Luna Witch>
 
 if [ "`uname -m`" = "x86_64" ]; then
     echo '64-bit Linux detected.'
@@ -156,7 +159,9 @@ fi
 
 fi
 
-FSJEMALLOC="$(pwd)/lib/libjemalloc.so"
+# <FS:Luna Witch> FS_JEMALLOC_LIB selects another jemalloc, e.g. a system build with heap profiling
+FSJEMALLOC="${FS_JEMALLOC_LIB:-$(pwd)/lib/libjemalloc.so}"
+# </FS:Luna Witch>
 if [ -f ${FSJEMALLOC} ]
 then
 	echo "Using jemalloc"

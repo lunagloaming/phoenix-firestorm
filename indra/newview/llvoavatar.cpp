@@ -11419,20 +11419,24 @@ void LLVOAvatar::onBakedTextureMasksLoaded( bool success, LLViewerFetchedTexture
                 return;
             }
 
-            U32 gl_name;
-            LLImageGL::generateTextures(1, &gl_name );
-            stop_glerror();
-
-            gGL.getTexUnit(0)->bindManual(LLTexUnit::TT_TEXTURE, gl_name);
-            stop_glerror();
-
-            LLImageGL::setManualImage(
-                GL_TEXTURE_2D, 0, GL_ALPHA8,
-                aux_src->getWidth(), aux_src->getHeight(),
-                GL_ALPHA, GL_UNSIGNED_BYTE, aux_src->getData());
-            stop_glerror();
-
-            gGL.getTexUnit(0)->setTextureFilteringOption(LLTexUnit::TFO_BILINEAR);
+            // <FS:Luna Witch> The mask texture (mMaskTexName) is never bound for rendering; the morph
+            // mask is applied from aux_src's data below. Skip the upload: with NVIDIA drivers it cost
+            // about 1 GB of system memory in a crowded region, on top of the video memory.
+            //U32 gl_name;
+            //LLImageGL::generateTextures(1, &gl_name );
+            //stop_glerror();
+            //
+            //gGL.getTexUnit(0)->bindManual(LLTexUnit::TT_TEXTURE, gl_name);
+            //stop_glerror();
+            //
+            //LLImageGL::setManualImage(
+            //    GL_TEXTURE_2D, 0, GL_ALPHA8,
+            //    aux_src->getWidth(), aux_src->getHeight(),
+            //    GL_ALPHA, GL_UNSIGNED_BYTE, aux_src->getData());
+            //stop_glerror();
+            //
+            //gGL.getTexUnit(0)->setTextureFilteringOption(LLTexUnit::TFO_BILINEAR);
+            // </FS:Luna Witch>
 
             /* if( id == head_baked->getID() )
                  if (self->mBakedTextureDatas[BAKED_HEAD].mTexLayerSet)
@@ -11455,11 +11459,13 @@ void LLVOAvatar::onBakedTextureMasksLoaded( bool success, LLViewerFetchedTexture
                         const EBakedTextureIndex baked_index = texture_dict->mBakedTextureIndex;
                         self->applyMorphMask(aux_src->getData(), aux_src->getWidth(), aux_src->getHeight(), 1, baked_index);
                         maskData->mLastDiscardLevel = discard_level;
-                        if (self->mBakedTextureDatas[baked_index].mMaskTexName)
-                        {
-                            LLImageGL::deleteTextures(1, &(self->mBakedTextureDatas[baked_index].mMaskTexName));
-                        }
-                        self->mBakedTextureDatas[baked_index].mMaskTexName = gl_name;
+                        // <FS:Luna Witch> No mask texture is created any more (see above)
+                        //if (self->mBakedTextureDatas[baked_index].mMaskTexName)
+                        //{
+                        //    LLImageGL::deleteTextures(1, &(self->mBakedTextureDatas[baked_index].mMaskTexName));
+                        //}
+                        //self->mBakedTextureDatas[baked_index].mMaskTexName = gl_name;
+                        // </FS:Luna Witch>
                         found_texture_id = true;
                         break;
                     }

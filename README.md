@@ -53,6 +53,20 @@ A single-process, multi-session viewer was considered and rejected. Session stat
     - the second instance writing its own object cache and reusing it on a return visit
   - **Memory: no improvement yet.** Main reached about 15–17 GB and Alt about 12–13 GB (RAM plus swap) in both builds, and both exceeded their GPU budgets by several GB. Finding what that memory actually is comes next.
   - **Memory pressure:** it stayed under 10% even with about 26 GB in compressed swap, so the threshold default was lowered to 2%.
+- **Where the memory goes** (heap profiling with jemalloc 5.4 on Main in a crowded region, about 18 GB live after 12 minutes):
+  - **Geometry, held up to four times:**
+    - the viewer's mesh/prim data, about 4.5 GB
+    - a system-memory copy of every vertex and index buffer that the viewer keeps after upload, about 4 GB
+    - an NVIDIA driver copy of the same buffers, about 4–7 GB
+    - the GPU copy itself
+  - **Textures are small:** decoded images are only about 0.2 GB of RAM.
+  - **The allocator isn't the problem:** jemalloc overhead is under 1 GB.
+  - **What made no measurable difference to the driver's copy:** the driver's threaded optimisation (`__GL_THREADED_OPTIMIZATIONS=0`), and the `GL_STATIC_DRAW` usage hint.
+  - **Graphics settings barely change the totals:** Alt, with much lower settings, used about 12 GB.
+- **Fixed:** avatar bake morph masks were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
+- **Linux wrapper:**
+  - `FS_JEMALLOC_LIB` selects another jemalloc, for example a system build with profiling.
+  - `__GL_THREADED_OPTIMIZATIONS` set by the caller is respected.
 - Expected once, on first launch against caches written by an official build: the texture cache is purged, because this build decodes with OpenJPEG instead of KDU.
 
 ### Building this branch on Linux
