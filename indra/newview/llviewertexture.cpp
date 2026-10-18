@@ -752,7 +752,7 @@ F32 get_linux_memory_pressure()
 
 F32 get_linux_memory_pressure_threshold()
 {
-    static LLCachedControl<F32> pressure_threshold(gSavedSettings, "FSLinuxMemPressureThreshold", 10.f);
+    static LLCachedControl<F32> pressure_threshold(gSavedSettings, "FSLinuxMemPressureThreshold", 2.f);
     return pressure_threshold;
 }
 

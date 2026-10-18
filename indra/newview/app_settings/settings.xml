@@ -2973,13 +2973,13 @@
     <key>FSLinuxMemPressureThreshold</key>
     <map>
       <key>Comment</key>
-      <string>Linux only: treat system memory as low when /proc/pressure/memory "some avg10" exceeds this percentage, even if free memory looks sufficient (e.g. with zram swap). 0 disables.</string>
+      <string>Linux only: treat system memory as low when /proc/pressure/memory "some avg10" exceeds this percentage, even if free memory looks sufficient (e.g. with zram swap). Fast zram swap keeps this figure low even under heavy swapping, so the default is small. 0 disables.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
       <string>F32</string>
       <key>Value</key>
-      <real>10.0</real>
+      <real>2.0</real>
     </map>
     <key>FSMultiBoxProfile</key>
     <map>

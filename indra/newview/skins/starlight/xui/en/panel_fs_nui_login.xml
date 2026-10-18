@@ -125,6 +125,21 @@
       label="Remember username"
       name="remember_username_check"
       width="204" />
+    <!-- <FS:Luna Witch> Shown only when launched with a multi-instance tuning profile (FSMultiBoxProfile).
+         Placed last with an explicit top so the top_pad chain above is unchanged. -->
+    <text
+      follows="left|top|right"
+      font="SansSerifSmall"
+      height="16"
+      left="7"
+      name="multibox_profile_text"
+      text_color="TextFgReadOnlyColor"
+      top="6"
+      width="199"
+      visible="false">
+      MultiBox profile
+    </text>
+    <!-- </FS:Luna Witch> -->
     </layout_panel> <!-- login -->
     <layout_panel
       tab_stop="false"

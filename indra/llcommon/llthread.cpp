@@ -154,9 +154,15 @@ LL_COMMON_API void ll_set_current_thread_name(const std::string& name)
 {
 #if LL_LINUX
     // Linux limits thread names to 15 characters. Keep a pool worker's ":i/n" suffix intact
-    // and shorten the part before it, e.g. "MeshLodProcessing:1/2" -> "MeshLodPr:1/2".
+    // and shorten the part before it, e.g. "ThreadPool:MeshLodProcessing:1/2" -> "MeshLodPr:1/2".
     constexpr size_t MAX_LEN = 15;
     std::string short_name = name;
+    // Pool workers are named "ThreadPool:<pool>:i/n"; the prefix would use up the whole limit.
+    const std::string pool_prefix = "ThreadPool:";
+    if (short_name.compare(0, pool_prefix.size(), pool_prefix) == 0 && short_name.size() > pool_prefix.size())
+    {
+        short_name.erase(0, pool_prefix.size());
+    }
     if (short_name.size() > MAX_LEN)
     {
         const size_t colon = short_name.rfind(':');

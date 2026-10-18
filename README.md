@@ -40,13 +40,19 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 | Setting | Default | Purpose |
 |---|---|---|
 | `FSReadOnlyCacheRefreshSecs` | 15 | Minimum interval between index re-reads in a read-only texture cache (0 disables) |
-| `FSLinuxMemPressureThreshold` | 10.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
+| `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status
 - Both phases build cleanly with GCC 14 on Ubuntu 24.04 (`ReleaseFS_open`).
 - Cross-process lock behaviour was checked against the bundled APR.
-- **Not yet tested in a running viewer.** Pending: baseline-vs-branch memory and swap comparison with Main and Alt in a crowded region. Also to check: slot and refresh log lines, Alt's CPU affinity and thread names, `objectcache_1/` filling in, and the login notice.
+- **First runtime test** (Main + Alt in one crowded region, about 20 minutes, against an unmodified build from the same starting cache):
+  - **Working:**
+    - instance slots, and Alt on the efficiency cores
+    - the read-only instance picking up textures the other instance cached
+    - the second instance writing its own object cache and reusing it on a return visit
+  - **Memory: no improvement yet.** Main reached about 15–17 GB and Alt about 12–13 GB (RAM plus swap) in both builds, and both exceeded their GPU budgets by several GB. Finding what that memory actually is comes next.
+  - **Memory pressure:** it stayed under 10% even with about 26 GB in compressed swap, so the threshold default was lowered to 2%.
 - Expected once, on first launch against caches written by an official build: the texture cache is purged, because this build decodes with OpenJPEG instead of KDU.
 
 ### Building this branch on Linux
