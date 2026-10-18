@@ -1190,7 +1190,8 @@ LLVOCache::LLVOCache(bool read_only) :
     mReadOnly(read_only),
     mNumEntries(0),
     mCacheSize(1),
-    mEnabled(true)
+    mEnabled(true),
+    mObjectCacheDirLeaf(object_cache_dirname) // <FS:Luna Witch/>
 {
 #ifndef LL_TEST
     mEnabled = gSavedSettings.getBOOL("ObjectCacheEnabled");
@@ -1210,11 +1211,14 @@ LLVOCache::~LLVOCache()
 
 void LLVOCache::setDirNames(ELLPath location)
 {
-    mHeaderFileName = gDirUtilp->getExpandedFilename(location, object_cache_dirname, header_filename);
-    mObjectCacheDirName = gDirUtilp->getExpandedFilename(location, object_cache_dirname);
+    mHeaderFileName = gDirUtilp->getExpandedFilename(location, mObjectCacheDirLeaf, header_filename); // <FS:Luna Witch/> was object_cache_dirname
+    mObjectCacheDirName = gDirUtilp->getExpandedFilename(location, mObjectCacheDirLeaf); // <FS:Luna Witch/> was object_cache_dirname
 }
 
-void LLVOCache::initCache(ELLPath location, U32 size, U32 cache_version)
+// <FS:Luna Witch> dir_name: per-instance object cache directory under location
+//void LLVOCache::initCache(ELLPath location, U32 size, U32 cache_version)
+void LLVOCache::initCache(ELLPath location, U32 size, U32 cache_version, const std::string& dir_name)
+// </FS:Luna Witch>
 {
     if(!mEnabled)
     {
@@ -1229,6 +1233,7 @@ void LLVOCache::initCache(ELLPath location, U32 size, U32 cache_version)
     }
     mInitialized = true;
 
+    mObjectCacheDirLeaf = dir_name; // <FS:Luna Witch/>
     setDirNames(location);
     if (!mReadOnly)
     {
@@ -1282,7 +1287,7 @@ void LLVOCache::removeCache(ELLPath location, bool started)
     LL_INFOS() << "about to remove the object cache due to settings." << LL_ENDL ;
 
     std::string mask = "*";
-    std::string cache_dir = gDirUtilp->getExpandedFilename(location, object_cache_dirname);
+    std::string cache_dir = gDirUtilp->getExpandedFilename(location, mObjectCacheDirLeaf); // <FS:Luna Witch/> was object_cache_dirname
     LL_INFOS() << "Removing cache at " << cache_dir << LL_ENDL;
     gDirUtilp->deleteFilesInDir(cache_dir, mask); //delete all files
     LLFile::rmdir(cache_dir);
@@ -1379,7 +1384,7 @@ void LLVOCache::getObjectCacheFilename(U64 handle, std::string& filename)
     U32 region_x, region_y;
 
     grid_from_region_handle(handle, &region_x, &region_y);
-    filename = gDirUtilp->getExpandedFilename(LL_PATH_CACHE, object_cache_dirname,
+    filename = gDirUtilp->getExpandedFilename(LL_PATH_CACHE, mObjectCacheDirLeaf, // <FS:Luna Witch/> was object_cache_dirname
                llformat(OBJECT_CACHE_FILENAME, region_x, region_y));
 
     return ;
@@ -1390,7 +1395,7 @@ std::string LLVOCache::getObjectCacheExtrasFilename(U64 handle)
     U32 region_x, region_y;
 
     grid_from_region_handle(handle, &region_x, &region_y);
-    return gDirUtilp->getExpandedFilename(LL_PATH_CACHE, object_cache_dirname,
+    return gDirUtilp->getExpandedFilename(LL_PATH_CACHE, mObjectCacheDirLeaf, // <FS:Luna Witch/> was object_cache_dirname
                llformat(OBJECT_CACHE_EXTRAS_FILENAME, region_x, region_y));
 }
 

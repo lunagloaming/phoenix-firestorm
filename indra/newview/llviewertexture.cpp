@@ -63,6 +63,7 @@
 #include "lltexturecache.h"
 #include "llviewerwindow.h"
 #include "llwindow.h"
+#include "fsinstanceslots.h" // <FS:Luna Witch/>
 ///////////////////////////////////////////////////////////////////////////////
 
 // statics
@@ -532,7 +533,11 @@ void LLViewerTexture::updateClass()
     // While we're at it, assume we have 1024 to play with at minimum when the divisor is in use.  Works more elegantly with the logic below this.
     // -Geenz 2025-03-21
     // F32 budget = max_vram_budget == 0 ? llmax(1024, (F32)gGLManager.mVRAM / tex_vram_divisor) : (F32)max_vram_budget;
-    F32 budget = !max_vram_budget_enabled ? llmax(1024, (F32)gGLManager.mVRAM / (tex_vram_divisor() > 0.f ? tex_vram_divisor() : 1.f)) : (F32)max_vram_budget;
+    // <FS:Luna Witch> An autodetected budget assumes the whole GPU; share it with other running viewer instances
+    //F32 budget = !max_vram_budget_enabled ? llmax(1024, (F32)gGLManager.mVRAM / (tex_vram_divisor() > 0.f ? tex_vram_divisor() : 1.f)) : (F32)max_vram_budget;
+    const F32 instance_count = (F32)FSInstanceSlots::instance().getActiveInstanceCount();
+    F32 budget = !max_vram_budget_enabled ? llmax(1024, (F32)gGLManager.mVRAM / (tex_vram_divisor() > 0.f ? tex_vram_divisor() : 1.f) / instance_count) : (F32)max_vram_budget;
+    // </FS:Luna Witch>
 
     // Try to leave at least half a GB for everyone else and for bias,
     // but keep at least 768MB for ourselves

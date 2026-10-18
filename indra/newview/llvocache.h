@@ -289,7 +289,10 @@ private:
 
 public:
     // We need this init to be separate from constructor, since we might construct cache, purge it, then init.
-    void initCache(ELLPath location, U32 size, U32 cache_version);
+    // <FS:Luna Witch> dir_name: per-instance object cache directory under location
+    //void initCache(ELLPath location, U32 size, U32 cache_version);
+    void initCache(ELLPath location, U32 size, U32 cache_version, const std::string& dir_name = "objectcache");
+    // </FS:Luna Witch>
     void removeCache(ELLPath location, bool started = false) ;
 
     bool readFromCache(U64 handle, const LLUUID& id, LLVOCacheEntry::vocache_entry_map_t& cache_entry_map) ;
@@ -326,6 +329,7 @@ private:
     U32                  mNumEntries;
     std::string          mHeaderFileName ;
     std::string          mObjectCacheDirName;
+    std::string          mObjectCacheDirLeaf; // <FS:Luna Witch/> Directory name under the cache location
     LLVolatileAPRPool*   mLocalAPRFilePoolp ;
     header_entry_queue_t mHeaderEntryQueue;
     handle_entry_map_t   mHandleEntryMap;
