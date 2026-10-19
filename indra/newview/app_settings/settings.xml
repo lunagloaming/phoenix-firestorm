@@ -2981,6 +2981,17 @@
       <key>Value</key>
       <real>2.0</real>
     </map>
+    <key>FSVBOGPUCopyUpload</key>
+    <map>
+      <key>Comment</key>
+      <string>Upload vertex/index data through a small staging buffer and a GPU-side copy instead of directly. The NVIDIA driver keeps a system-memory copy of everything uploaded directly (about 1 GB of RAM per GB of geometry) but not of data copied on the GPU. Not used on Apple GPUs.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
     <key>FSVBOReleaseStagingSecs</key>
     <map>
       <key>Comment</key>

@@ -349,6 +349,7 @@ public:
     // <FS:Luna Witch>
     static F32 sStagingReleaseSecs; // release the CPU copy after this many seconds unmapped (0 keeps it)
     static void releaseIdleStaging(); // main thread, once per frame
+    static bool sGPUCopyUpload; // upload through a staging buffer and a GPU copy (see flush_vbo)
     // </FS:Luna Witch>
 };
 

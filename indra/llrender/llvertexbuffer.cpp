@@ -1522,6 +1522,55 @@ U8* LLVertexBuffer::mapIndexBuffer(U32 index, S32 count)
 //  end -- last byte to copy (NOT last byte + 1)
 //  data -- data to be flushed
 //  dst -- mMappedData or mMappedIndexData
+// <FS:Luna Witch> The NVIDIA driver keeps a system-memory copy of everything uploaded into a buffer with
+// glBufferSubData (or glBufferData with data), for the buffer's lifetime: about 1 GB of RAM per GB of
+// geometry. Data that reaches a buffer through glCopyBufferSubData from another buffer gets no such copy.
+// So write uploads into one small staging buffer and copy them on the GPU; only the staging buffer's
+// few MB are shadowed. Measured standalone: 2 GB of 256 KB buffers cost +2087 MB of driver memory the
+// old way and +40 MB this way, and uploaded 2-4x faster.
+bool LLVertexBuffer::sGPUCopyUpload = false;
+
+static void upload_via_gpu_copy(GLenum target, U32 offset, U32 size, const U8* data)
+{
+    LL_PROFILE_ZONE_SCOPED_CATEGORY_VERTEX;
+    constexpr U32 staging_size = 4 * 1024 * 1024;
+    // per thread, since binding state belongs to the thread's GL context
+    thread_local GLuint staging = 0;
+    thread_local U32 staging_pos = 0;
+
+    if (!staging)
+    {
+        glGenBuffers(1, &staging);
+        glBindBuffer(GL_COPY_READ_BUFFER, staging);
+        glBufferData(GL_COPY_READ_BUFFER, staging_size, nullptr, GL_STREAM_DRAW);
+        staging_pos = 0;
+    }
+    else
+    {
+        glBindBuffer(GL_COPY_READ_BUFFER, staging);
+    }
+
+    while (size > 0)
+    {
+        U32 n = llmin(size, staging_size);
+        if (staging_pos + n > staging_size)
+        {
+            // orphan: the driver hands out fresh storage instead of waiting for pending copies
+            glBufferData(GL_COPY_READ_BUFFER, staging_size, nullptr, GL_STREAM_DRAW);
+            staging_pos = 0;
+        }
+        glBufferSubData(GL_COPY_READ_BUFFER, staging_pos, n, data);
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, target, staging_pos, offset, n);
+        staging_pos += (n + 15) & ~15U;
+        offset += n;
+        data += n;
+        size -= n;
+    }
+
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+}
+// </FS:Luna Witch>
+
 void LLVertexBuffer::flush_vbo(GLenum target, U32 start, U32 end, void* data, U8* dst)
 {
     if (gGLManager.mIsApple)
@@ -1545,6 +1594,14 @@ void LLVertexBuffer::flush_vbo(GLenum target, U32 start, U32 end, void* data, U8
             LL_PROFILE_ZONE_NUM(start);
             LL_PROFILE_ZONE_NUM(end);
             LL_PROFILE_ZONE_NUM(end-start);
+
+            // <FS:Luna Witch>
+            if (sGPUCopyUpload)
+            {
+                upload_via_gpu_copy(target, start, end - start + 1, (const U8*)data);
+                return;
+            }
+            // </FS:Luna Witch>
 
             constexpr U32 block_size = 65536;
 

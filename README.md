@@ -41,6 +41,7 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 |---|---|---|
 | `FSReadOnlyCacheRefreshSecs` | 15 | Minimum interval between index re-reads in a read-only texture cache (0 disables) |
 | `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
+| `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
 | `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
@@ -69,6 +70,9 @@ A single-process, multi-session viewer was considered and rejected. Session stat
   - In a crowded venue this cut that memory from about 3.4–4.1 GB to under 0.1 GB, with about 1.7 GB freed at any moment.
   - Only a trickle of buffers needed reading back (10–15 MB a minute).
   - No rendering problems were seen.
+- **Changed:** vertex and index data is uploaded through a small staging buffer and a GPU-side copy (`FSVBOGPUCopyUpload`), instead of directly with `glBufferSubData`.
+  - In a standalone test on NVIDIA, direct uploads made the driver keep a system-memory copy of every buffer (about 1 GB of RAM per GB of geometry). Copying on the GPU avoided that, and uploads were 2–4× faster.
+  - In the viewer, scenes loaded noticeably faster, but the driver's own memory barely moved (4.1 → 3.65 GB). Most of it comes from somewhere the standalone test doesn't reproduce, which is still under investigation.
 - **Linux wrapper:**
   - `FS_JEMALLOC_LIB` selects another jemalloc, for example a system build with profiling.
   - `__GL_THREADED_OPTIMIZATIONS` set by the caller is respected.

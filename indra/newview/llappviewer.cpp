@@ -5933,6 +5933,8 @@ void LLAppViewer::idle()
     static LLCachedControl<F32> vbo_release_staging_secs(gSavedSettings, "FSVBOReleaseStagingSecs");
     LLVertexBuffer::sStagingReleaseSecs = vbo_release_staging_secs;
     LLVertexBuffer::releaseIdleStaging();
+    static LLCachedControl<bool> vbo_gpu_copy_upload(gSavedSettings, "FSVBOGPUCopyUpload");
+    LLVertexBuffer::sGPUCopyUpload = vbo_gpu_copy_upload;
     // </FS:Luna Witch>
 
     // Service the WorkQueue we use for replies from worker threads.
