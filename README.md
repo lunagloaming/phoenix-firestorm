@@ -51,6 +51,7 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 | `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
 | `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
 | `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
+| `FSVBOAllocTrace` | off | Debug, not saved: log once a minute how much heap the GL driver allocates and frees inside the vertex buffer pool's GL calls, with a size histogram (Linux with jemalloc; run with `__GL_THREADED_OPTIMIZATIONS=0`) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status

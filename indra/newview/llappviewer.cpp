@@ -5935,6 +5935,8 @@ void LLAppViewer::idle()
     LLVertexBuffer::releaseIdleStaging();
     static LLCachedControl<bool> vbo_gpu_copy_upload(gSavedSettings, "FSVBOGPUCopyUpload");
     LLVertexBuffer::sGPUCopyUpload = vbo_gpu_copy_upload;
+    static LLCachedControl<bool> vbo_alloc_trace(gSavedSettings, "FSVBOAllocTrace");
+    LLVertexBuffer::sAllocTrace = vbo_alloc_trace;
     // </FS:Luna Witch>
 
     // Service the WorkQueue we use for replies from worker threads.

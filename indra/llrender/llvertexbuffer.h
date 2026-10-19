@@ -350,6 +350,7 @@ public:
     static F32 sStagingReleaseSecs; // release the CPU copy after this many seconds unmapped (0 keeps it)
     static void releaseIdleStaging(); // main thread, once per frame
     static bool sGPUCopyUpload; // upload through a staging buffer and a GPU copy (see flush_vbo)
+    static bool sAllocTrace;    // FSVBOAllocTrace: log driver heap use inside the pool's GL calls
     // </FS:Luna Witch>
 };
 

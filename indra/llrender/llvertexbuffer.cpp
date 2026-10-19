@@ -37,6 +37,10 @@
 #include "llglslshader.h"
 #include "llmemory.h"
 #include "llframetimer.h" // <FS:Luna Witch/>
+#include <atomic> // <FS:Luna Witch/>
+#if LL_LINUX
+#include <dlfcn.h> // <FS:Luna Witch/> dlsym(mallctl)
+#endif
 #include <glm/gtc/type_ptr.hpp>
 
 //Next Highest Power Of Two
@@ -259,6 +263,142 @@ static GLWorkQueue* sQueue = nullptr;
 //============================================================================
 // Pool of reusable VertexBuffer state
 
+// <FS:Luna Witch> Debug instrumentation (FSVBOAllocTrace): heap bytes the GL driver allocates and frees on the
+// calling thread inside the pool's GL calls, read from jemalloc's per-thread counters (thread.allocatedp).
+// Only meaningful with __GL_THREADED_OPTIMIZATIONS=0; otherwise the driver allocates on its own threads.
+bool LLVertexBuffer::sAllocTrace = false;
+
+namespace
+{
+    struct ThreadAllocCounters
+    {
+        U64* allocated = nullptr;
+        U64* deallocated = nullptr;
+    };
+
+    const ThreadAllocCounters& thread_alloc_counters()
+    {
+        thread_local ThreadAllocCounters counters = []
+        {
+            ThreadAllocCounters c;
+#if LL_LINUX
+            typedef int (*mallctl_fn)(const char*, void*, size_t*, void*, size_t);
+            if (auto mallctl = (mallctl_fn)dlsym(RTLD_DEFAULT, "mallctl"))
+            {
+                size_t sz = sizeof(U64*);
+                mallctl("thread.allocatedp", &c.allocated, &sz, nullptr, 0);
+                sz = sizeof(U64*);
+                mallctl("thread.deallocatedp", &c.deallocated, &sz, nullptr, 0);
+            }
+#endif
+            return c;
+        }();
+        return counters;
+    }
+
+    struct AllocTraceStat
+    {
+        std::atomic<U64> calls{ 0 };
+        std::atomic<U64> requested{ 0 }; // bytes the call asked GL for, where that applies
+        std::atomic<U64> allocated{ 0 }; // heap bytes allocated during the call
+        std::atomic<U64> freed{ 0 };     // heap bytes freed during the call
+    };
+
+    enum
+    {
+        TRACE_GEN,           // glGenBuffers batches
+        TRACE_BIND,          // glBindBuffer before creating a buffer
+        TRACE_CREATE_VERTEX, // glBufferData(GL_ARRAY_BUFFER, size, nullptr, ...)
+        TRACE_CREATE_INDEX,  // glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, nullptr, ...)
+        TRACE_UPLOAD,        // uploads through flush_vbo
+        TRACE_DELETE,        // glDeleteBuffers batches
+        TRACE_COUNT
+    };
+    const char* const sTraceNames[TRACE_COUNT] = { "gen", "bind", "create vertex", "create index", "upload", "delete" };
+    AllocTraceStat sTrace[TRACE_COUNT];
+    AllocTraceStat sCreateBySize[32]; // buffer creation by log2 of the requested size
+
+    class AllocTraceScope
+    {
+    public:
+        AllocTraceScope(U32 which, U64 requested = 0, AllocTraceStat* bucket = nullptr)
+        {
+            if (!LLVertexBuffer::sAllocTrace)
+            {
+                return;
+            }
+            const ThreadAllocCounters& c = thread_alloc_counters();
+            if (!c.allocated || !c.deallocated)
+            {
+                return;
+            }
+            mCounters = &c;
+            mStat = &sTrace[which];
+            mBucket = bucket;
+            mRequested = requested;
+            mAllocated = *c.allocated;
+            mDeallocated = *c.deallocated;
+        }
+
+        ~AllocTraceScope()
+        {
+            if (!mStat)
+            {
+                return;
+            }
+            U64 allocated = *mCounters->allocated - mAllocated;
+            U64 freed = *mCounters->deallocated - mDeallocated;
+            for (AllocTraceStat* stat : { mStat, mBucket })
+            {
+                if (stat)
+                {
+                    stat->calls.fetch_add(1, std::memory_order_relaxed);
+                    stat->requested.fetch_add(mRequested, std::memory_order_relaxed);
+                    stat->allocated.fetch_add(allocated, std::memory_order_relaxed);
+                    stat->freed.fetch_add(freed, std::memory_order_relaxed);
+                }
+            }
+        }
+
+    private:
+        const ThreadAllocCounters* mCounters = nullptr;
+        AllocTraceStat* mStat = nullptr;
+        AllocTraceStat* mBucket = nullptr;
+        U64 mRequested = 0;
+        U64 mAllocated = 0;
+        U64 mDeallocated = 0;
+    };
+
+    void log_alloc_trace()
+    {
+        if (!thread_alloc_counters().allocated)
+        {
+            LL_INFOS("VBOAllocTrace") << "jemalloc thread counters unavailable; nothing traced" << LL_ENDL;
+            return;
+        }
+        const char* threaded = getenv("__GL_THREADED_OPTIMIZATIONS");
+        LL_INFOS("VBOAllocTrace") << "driver heap during pool GL calls (MB; __GL_THREADED_OPTIMIZATIONS="
+            << (threaded ? threaded : "unset") << "):" << LL_ENDL;
+        for (U32 i = 0; i < TRACE_COUNT; ++i)
+        {
+            const AllocTraceStat& t = sTrace[i];
+            LL_INFOS("VBOAllocTrace") << "  " << sTraceNames[i] << ": " << t.calls << " calls, requested "
+                << t.requested / 1048576 << ", allocated " << t.allocated / 1048576 << ", freed " << t.freed / 1048576 << LL_ENDL;
+        }
+        for (U32 i = 0; i < 32; ++i)
+        {
+            const AllocTraceStat& t = sCreateBySize[i];
+            if (t.calls)
+            {
+                LL_INFOS("VBOAllocTrace") << "  create " << (1ull << i) << "-" << ((2ull << i) - 1) << " B: " << t.calls
+                    << " calls, requested " << t.requested / 1024 << " KB, allocated " << t.allocated / 1024
+                    << " KB, freed " << t.freed / 1024 << " KB" << LL_ENDL;
+            }
+        }
+    }
+}
+// </FS:Luna Witch>
+
 // batch calls to glGenBuffers
 static GLuint gen_buffer()
 {
@@ -277,6 +417,7 @@ static GLuint gen_buffer()
 #if !LL_DARWIN
         if (!gGLManager.mIsAMD)
         {
+            AllocTraceScope trace(TRACE_GEN); // <FS:Luna Witch/>
             glGenBuffers(pool_size, sNamePool);
         }
         else
@@ -313,6 +454,7 @@ static void delete_buffers(S32 count, GLuint* buffers)
 
         if (!sFreeList[idx].empty())
         {
+            AllocTraceScope trace(TRACE_DELETE); // <FS:Luna Witch/>
             glDeleteBuffers((GLsizei)sFreeList[idx].size(), sFreeList[idx].data());
             sFreeList[idx].resize(0);
         }
@@ -454,8 +596,19 @@ public:
 
             mMisses++;
             name = gen_buffer();
-            glBindBuffer(type, name);
-            glBufferData(type, size, nullptr, GL_DYNAMIC_DRAW);
+            // <FS:Luna Witch> FSVBOAllocTrace
+            //glBindBuffer(type, name);
+            //glBufferData(type, size, nullptr, GL_DYNAMIC_DRAW);
+            {
+                AllocTraceScope trace(TRACE_BIND);
+                glBindBuffer(type, name);
+            }
+            {
+                AllocTraceScope trace(type == GL_ELEMENT_ARRAY_BUFFER ? TRACE_CREATE_INDEX : TRACE_CREATE_VERTEX, size,
+                                      &sCreateBySize[31 - __builtin_clz(size)]);
+                glBufferData(type, size, nullptr, GL_DYNAMIC_DRAW);
+            }
+            // </FS:Luna Witch>
             if (type == GL_ELEMENT_ARRAY_BUFFER)
             {
                 LLVertexBuffer::sGLRenderIndices = name;
@@ -1141,6 +1294,10 @@ void LLVertexBuffer::releaseIdleStaging()
         LL_INFOS("VBOStaging") << "CPU copies released: " << sStagingReleasedBytes / 1048576 << " MB now, "
             << sStagingReleases << " releases; read back from GL: " << sStagingRestores << " times, "
             << sStagingRestoredBytes / 1048576 << " MB; " << staged_buffers().size() << " buffers listed" << LL_ENDL;
+        if (sAllocTrace)
+        {
+            log_alloc_trace();
+        }
     }
 
     if (sStagingReleaseSecs <= 0.f || gGLManager.mIsApple)
@@ -1533,6 +1690,7 @@ bool LLVertexBuffer::sGPUCopyUpload = false;
 static void upload_via_gpu_copy(GLenum target, U32 offset, U32 size, const U8* data)
 {
     LL_PROFILE_ZONE_SCOPED_CATEGORY_VERTEX;
+    AllocTraceScope trace(TRACE_UPLOAD, size);
     constexpr U32 staging_size = 4 * 1024 * 1024;
     // per thread, since binding state belongs to the thread's GL context
     thread_local GLuint staging = 0;
@@ -1605,6 +1763,7 @@ void LLVertexBuffer::flush_vbo(GLenum target, U32 start, U32 end, void* data, U8
 
             constexpr U32 block_size = 65536;
 
+            AllocTraceScope trace(TRACE_UPLOAD, end - start + 1); // <FS:Luna Witch/>
             for (U32 i = start; i <= end; i += block_size)
             {
                 //LL_PROFILE_ZONE_NAMED_CATEGORY_VERTEX("glBufferSubData block");

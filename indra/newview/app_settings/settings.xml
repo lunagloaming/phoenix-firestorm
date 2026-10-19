@@ -2981,6 +2981,17 @@
       <key>Value</key>
       <real>2.0</real>
     </map>
+    <key>FSVBOAllocTrace</key>
+    <map>
+      <key>Comment</key>
+      <string>Debug: log, once a minute, how much heap memory the GL driver allocates and frees inside the vertex buffer pool's GL calls (create, upload, delete), with a size histogram. Needs jemalloc (Linux) and __GL_THREADED_OPTIMIZATIONS=0 to attribute the driver's allocations.</string>
+      <key>Persist</key>
+      <integer>0</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>0</integer>
+    </map>
     <key>FSVBOGPUCopyUpload</key>
     <map>
       <key>Comment</key>
