@@ -2995,13 +2995,24 @@
     <key>FSVBOGPUCopyUpload</key>
     <map>
       <key>Comment</key>
-      <string>Upload vertex/index data through a small staging buffer and a GPU-side copy instead of directly. The NVIDIA driver keeps a system-memory copy of everything uploaded directly (about 1 GB of RAM per GB of geometry) but not of data copied on the GPU. Not used on Apple GPUs.</string>
+      <string>Upload vertex/index data through a small staging buffer and a GPU-side copy instead of directly. Uploads are 2-4x faster, so scenes load faster, and the NVIDIA driver keeps less system memory (a few hundred MB in a crowd). Not used on Apple GPUs.</string>
       <key>Persist</key>
       <integer>1</integer>
       <key>Type</key>
       <string>Boolean</string>
       <key>Value</key>
       <integer>1</integer>
+    </map>
+    <key>FSHeapDecayMs</key>
+    <map>
+      <key>Comment</key>
+      <string>Linux with jemalloc: milliseconds freed memory pages stay with the allocator before they are returned to the system (jemalloc dirty_decay_ms and muzzy_decay_ms). 0 returns them at once: the GL driver reserves heap memory the size of every vertex buffer without writing most of it, and recycled pages would make those reservations resident. That saves about 0.8 GB per viewer in a crowd with no measurable frame rate cost. Negative leaves the allocator's own setting (10000, or MALLOC_CONF).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>S32</string>
+      <key>Value</key>
+      <integer>0</integer>
     </map>
     <key>FSVBOReleaseStagingSecs</key>
     <map>

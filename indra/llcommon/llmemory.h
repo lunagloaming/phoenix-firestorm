@@ -454,6 +454,11 @@ public:
     static U32Kilobytes getMaxHeapSizeKB();
     // </FS:Beq>
     static U32Kilobytes getAllocatedMemKB() ;
+    // <FS:Luna Witch> Linux with jemalloc: milliseconds that freed pages stay mapped before they are returned to
+    // the OS (dirty_decay_ms and muzzy_decay_ms on every arena). Negative leaves the allocator's own setting.
+    // No-op elsewhere.
+    static void setAllocatorDecayMs(S32 ms);
+    // </FS:Luna Witch>
 private:
     static void updateFreeSystemMemory();
     // LLMemoryInfo directly updates memory stats

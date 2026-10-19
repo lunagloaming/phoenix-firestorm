@@ -5937,6 +5937,13 @@ void LLAppViewer::idle()
     LLVertexBuffer::sGPUCopyUpload = vbo_gpu_copy_upload;
     static LLCachedControl<bool> vbo_alloc_trace(gSavedSettings, "FSVBOAllocTrace");
     LLVertexBuffer::sAllocTrace = vbo_alloc_trace;
+    static LLCachedControl<S32> heap_decay_ms(gSavedSettings, "FSHeapDecayMs");
+    static S32 applied_heap_decay_ms = -1;
+    if (heap_decay_ms != applied_heap_decay_ms)
+    {
+        applied_heap_decay_ms = heap_decay_ms;
+        LLMemory::setAllocatorDecayMs(applied_heap_decay_ms);
+    }
     // </FS:Luna Witch>
 
     // Service the WorkQueue we use for replies from worker threads.

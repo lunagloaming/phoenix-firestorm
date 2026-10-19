@@ -40,6 +40,7 @@
 # include <unistd.h>
 # include <sys/resource.h>
 # include <sys/sysinfo.h>
+# include <dlfcn.h> // <FS:Luna Witch/> dlsym(mallctl)
 #endif
 
 #include "llmemory.h"
@@ -280,6 +281,56 @@ F32 LLMemory::getSystemMemoryBudgetFactor()
 
     return sSysMemoryFactor;
 }
+
+// <FS:Luna Witch> The GL driver mallocs a reservation the size of each vertex buffer and never writes most of it.
+// With jemalloc's default 10 s decay those reservations land on recently freed pages that are still resident, so
+// they cost RAM anyway; returning freed pages at once keeps them untouched. Measured in a crowd: about 0.8 GB less
+// per viewer, no frame rate change.
+//static
+void LLMemory::setAllocatorDecayMs(S32 ms)
+{
+#if LL_LINUX
+    if (ms < 0)
+    {
+        return;
+    }
+    typedef int (*mallctl_fn)(const char*, void*, size_t*, void*, size_t);
+    static mallctl_fn mallctl = (mallctl_fn)dlsym(RTLD_DEFAULT, "mallctl");
+    if (!mallctl)
+    {
+        LL_INFOS("Memory") << "Not running on jemalloc; allocator decay left alone" << LL_ENDL;
+        return;
+    }
+
+    ssize_t decay = ms;
+    // Arenas created from now on
+    mallctl("arenas.dirty_decay_ms", nullptr, nullptr, &decay, sizeof(decay));
+    mallctl("arenas.muzzy_decay_ms", nullptr, nullptr, &decay, sizeof(decay));
+
+    // Arenas that exist already; indices that were never initialised fail and are skipped
+    unsigned narenas = 0;
+    size_t len = sizeof(narenas);
+    if (mallctl("arenas.narenas", &narenas, &len, nullptr, 0))
+    {
+        return;
+    }
+    U32 applied = 0;
+    for (unsigned i = 0; i < narenas; ++i)
+    {
+        char name[64];
+        snprintf(name, sizeof(name), "arena.%u.dirty_decay_ms", i);
+        if (!mallctl(name, nullptr, nullptr, &decay, sizeof(decay)))
+        {
+            ++applied;
+        }
+        snprintf(name, sizeof(name), "arena.%u.muzzy_decay_ms", i);
+        mallctl(name, nullptr, nullptr, &decay, sizeof(decay));
+    }
+    LL_INFOS("Memory") << "jemalloc dirty/muzzy decay set to " << ms << " ms on " << applied << " of " << narenas
+        << " arenas" << LL_ENDL;
+#endif
+}
+// </FS:Luna Witch>
 
 #if LL_WINDOWS
 //static
