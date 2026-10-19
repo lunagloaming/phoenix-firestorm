@@ -30,10 +30,18 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 - **Instance-aware defaults:** the autodetected texture GPU-memory budget and the automatic image-decode thread count are divided by the number of running instances. Explicit settings are left alone.
 - **Settings on exit:** a second instance sharing the user directory no longer overwrites `settings.xml` when it exits. Changes made in Preferences are still saved when it is closed with OK.
 
+**Phase 3: memory footprint** (found by heap profiling; see Status)
+- **Avatar bake masks:** they were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
+- **Vertex buffer CPU copies:** every vertex and index buffer used to keep a system-memory copy of its contents for its whole lifetime. The copy is now freed once a buffer has gone unchanged for 10 seconds, and is read back from the GPU if the buffer ever changes again.
+- **GPU-copy uploads:** geometry is uploaded through a small staging buffer and a GPU-side copy, instead of directly. On NVIDIA, direct uploads make the driver keep its own system copy of every buffer. This path avoids that in isolation, and it also loads scenes noticeably faster.
+
 **Outside the viewer: Main/Alt launchers**
 - `main` and `alt` modes pass session-only `--set` overrides (not saved to `settings.xml`).
 - The Alt profile trades quality for memory: a lower GPU budget, a lower avatar-complexity limit, fewer fully rendered avatars, lower LOD, shorter draw distance and a frame cap. Its whole process is pinned to the efficiency cores on hybrid CPUs.
 - The launchers use a separate user-data directory (`FIRESTORM_X64_USER_DIR`), so they don't disturb a normal Firestorm install.
+- **Linux wrapper (`firestorm`):**
+  - `FS_JEMALLOC_LIB` selects another jemalloc, for example a system build with heap profiling.
+  - `__GL_THREADED_OPTIMIZATIONS` set by the caller is respected; the default is still on.
 
 ### New settings
 
@@ -41,42 +49,42 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 |---|---|---|
 | `FSReadOnlyCacheRefreshSecs` | 15 | Minimum interval between index re-reads in a read-only texture cache (0 disables) |
 | `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
-| `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
 | `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
+| `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status
-- Both phases build cleanly with GCC 14 on Ubuntu 24.04 (`ReleaseFS_open`).
-- Cross-process lock behaviour was checked against the bundled APR.
-- **First runtime test** (Main + Alt in one crowded region, about 20 minutes, against an unmodified build from the same starting cache):
-  - **Working:**
-    - instance slots, and Alt on the efficiency cores
-    - the read-only instance picking up textures the other instance cached
-    - the second instance writing its own object cache and reusing it on a return visit
-  - **Memory: no improvement yet.** Main reached about 15–17 GB and Alt about 12–13 GB (RAM plus swap) in both builds, and both exceeded their GPU budgets by several GB. Finding what that memory actually is comes next.
-  - **Memory pressure:** it stayed under 10% even with about 26 GB in compressed swap, so the threshold default was lowered to 2%.
-- **Where the memory goes** (heap profiling with jemalloc 5.4 on Main in a crowded region, about 18 GB live after 12 minutes):
-  - **Geometry, held up to four times:**
-    - the viewer's mesh/prim data, about 4.5 GB
-    - a system-memory copy of every vertex and index buffer that the viewer keeps after upload, about 4 GB (now freed, see below)
-    - an NVIDIA driver copy of the same buffers, about 4–7 GB
-    - the GPU copy itself
-  - **Textures are small:** decoded images are only about 0.2 GB of RAM.
-  - **The allocator isn't the problem:** jemalloc overhead is under 1 GB.
-  - **What made no measurable difference to the driver's copy:** the driver's threaded optimisation (`__GL_THREADED_OPTIMIZATIONS=0`), and the `GL_STATIC_DRAW` usage hint.
-  - **Graphics settings barely change the totals:** Alt, with much lower settings, used about 12 GB.
-- **Fixed:** avatar bake morph masks were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
-- **Fixed:** the viewer's own copy of each vertex and index buffer is freed once the buffer has gone unchanged for `FSVBOReleaseStagingSecs` (10 s). If the buffer changes again, the copy is first read back from the GPU, so behaviour is unchanged.
-  - In a crowded venue this cut that memory from about 3.4–4.1 GB to under 0.1 GB, with about 1.7 GB freed at any moment.
-  - Only a trickle of buffers needed reading back (10–15 MB a minute).
-  - No rendering problems were seen.
-- **Changed:** vertex and index data is uploaded through a small staging buffer and a GPU-side copy (`FSVBOGPUCopyUpload`), instead of directly with `glBufferSubData`.
-  - In a standalone test on NVIDIA, direct uploads made the driver keep a system-memory copy of every buffer (about 1 GB of RAM per GB of geometry). Copying on the GPU avoided that, and uploads were 2–4× faster.
-  - In the viewer, scenes loaded noticeably faster, but the driver's own memory barely moved (4.1 → 3.65 GB). Most of it comes from somewhere the standalone test doesn't reproduce, which is still under investigation.
-- **Linux wrapper:**
-  - `FS_JEMALLOC_LIB` selects another jemalloc, for example a system build with profiling.
-  - `__GL_THREADED_OPTIMIZATIONS` set by the caller is respected.
-- Expected once, on first launch against caches written by an official build: the texture cache is purged, because this build decodes with OpenJPEG instead of KDU.
+Builds cleanly with GCC 14 on Ubuntu 24.04 (`ReleaseFS_open`). Linux-only testing so far, on an i7-14700K with 32 GB of RAM (zram swap) and an RTX 4090 (driver 615).
+
+**Working (runtime-tested with Main and Alt in a crowded region):**
+- instance slots, and Alt on the efficiency cores
+- the read-only instance picking up textures the other instance cached
+- the second instance writing its own object cache and reusing it on a return visit
+- the memory-pressure trigger (with zram it rarely passes 10%, hence the 2% default)
+- an evening of dogfooding with various alts and locations, with no crashes
+
+**Memory, Main in a crowded region** (jemalloc heap profiles):
+
+| | Start (unmodified) | Now |
+|---|---|---|
+| Live heap after about 12 minutes | about 18 GB | about 8.4 GB |
+| Viewer's CPU copies of vertex buffers | 3.4–4.1 GB | under 0.1 GB |
+| Avatar bake mask textures (driver memory) | about 1 GB | about 1 MB |
+| NVIDIA driver memory, other | 4–6 GB | about 3.7 GB |
+| Mesh/prim geometry (`LLVolumeFace`) | 2.7–4.5 GB | about 2.8 GB |
+
+The runs differ in crowd size and settings, so the totals are indicative. The per-item figures are the reliable ones.
+
+**Still open:**
+- **Most of the NVIDIA driver's memory remains**, even though GPU-copy uploads remove it in a standalone test. Attributing it needs a profile with the driver's threaded optimisation off.
+- **Mesh geometry** is now the largest item in the viewer's own memory.
+- **An unattributed "operator delete[]" entry**, about 0.8 GB.
+- **GPU budgets:** both instances still exceed their texture GPU-memory budgets by several GB, because the budget covers only textures.
+
+**Known issues not caused by this branch:**
+- **Expected once:** on first launch against caches written by an official build, the texture cache is purged, because this build decodes with OpenJPEG instead of KDU.
+- **Avatars missing all attachments until a scene reload** (for example by dropping and restoring draw distance) is the long-standing SL object-update problem.
+- **A mesh door renders broken from behind in unmodified `master` builds as well**, but not in the 7.2.4 release. It's either an upstream change or the OpenJPEG decoder.
 
 ### Building this branch on Linux
 `doc/building_linux.md` still describes Ubuntu 22.04 with GCC 11, but current code needs **GCC 14**, the toolchain the official builds now use on Ubuntu 24.04. With an Ubuntu 24.04 build environment, `gcc-14`/`g++-14` installed and `CC=gcc-14 CXX=g++-14`:
@@ -86,7 +94,10 @@ autobuild configure -A 64 -c ReleaseFS_open -- --ninja --jobs 10 --chan=MultiBox
 autobuild build     -A 64 -c ReleaseFS_open --no-configure -- --ninja --jobs 10 --chan=MultiBox -DLL_TESTS:BOOL=FALSE
 ```
 
+When running from the packaged tree (`build-linux-x86_64/newview/packaged/`) or a copy of it, check that `bin/dullahan_host`, `bin/chrome-sandbox` and `bin/SLVoice` are executable (`chmod 755`). A build in a rootless chroot left them at 644, which silently breaks the web login page, profiles, media and voice.
+
 ### Not done (possible future work)
+- Tracking down the rest of the NVIDIA driver's memory, and reducing mesh geometry held for avatars that aren't fully rendered.
 - Per-thread-pool placement on performance or efficiency cores (beyond the launcher's whole-process pinning for Alt).
 - Idle scheduling priority for housekeeping threads such as cache purging.
 - Multiple writers to the shared texture cache index. Its fixed-slot format is inherently single-writer.
