@@ -270,6 +270,18 @@ bool LLVertexBuffer::sAllocTrace = false;
 
 namespace
 {
+    typedef int (*mallctl_fn)(const char*, void*, size_t*, void*, size_t);
+
+    mallctl_fn get_mallctl()
+    {
+#if LL_LINUX
+        static mallctl_fn fn = (mallctl_fn)dlsym(RTLD_DEFAULT, "mallctl");
+        return fn;
+#else
+        return nullptr;
+#endif
+    }
+
     struct ThreadAllocCounters
     {
         U64* allocated = nullptr;
@@ -282,8 +294,7 @@ namespace
         {
             ThreadAllocCounters c;
 #if LL_LINUX
-            typedef int (*mallctl_fn)(const char*, void*, size_t*, void*, size_t);
-            if (auto mallctl = (mallctl_fn)dlsym(RTLD_DEFAULT, "mallctl"))
+            if (auto mallctl = get_mallctl())
             {
                 size_t sz = sizeof(U64*);
                 mallctl("thread.allocatedp", &c.allocated, &sz, nullptr, 0);
@@ -369,6 +380,52 @@ namespace
         U64 mDeallocated = 0;
     };
 
+    // Whole-process allocator totals next to the kernel's view of the process, to tell heap bytes that are
+    // allocated but never touched (not resident) from memory that really costs RAM or swap.
+    void log_allocator_totals()
+    {
+#if LL_LINUX
+        mallctl_fn mallctl = get_mallctl();
+        if (!mallctl)
+        {
+            return;
+        }
+        U64 epoch = 1;
+        size_t len = sizeof(epoch);
+        mallctl("epoch", &epoch, &len, &epoch, len); // refresh the cached stats
+        auto stat = [mallctl](const char* name) -> size_t
+        {
+            size_t value = 0;
+            size_t size = sizeof(value);
+            return mallctl(name, &value, &size, nullptr, 0) ? 0 : value;
+        };
+        const size_t page = stat("arenas.page");
+        // 4096 = MALLCTL_ARENAS_ALL: summed over all arenas
+        const size_t dirty = stat("stats.arenas.4096.pdirty") * page;
+        const size_t muzzy = stat("stats.arenas.4096.pmuzzy") * page;
+
+        U64 rss_kb = 0, anon_kb = 0, swap_kb = 0;
+        if (FILE* f = fopen("/proc/self/status", "r"))
+        {
+            char line[256];
+            while (fgets(line, sizeof(line), f))
+            {
+                sscanf(line, "VmRSS: %llu", (unsigned long long*)&rss_kb);
+                sscanf(line, "RssAnon: %llu", (unsigned long long*)&anon_kb);
+                sscanf(line, "VmSwap: %llu", (unsigned long long*)&swap_kb);
+            }
+            fclose(f);
+        }
+
+        LL_INFOS("VBOAllocTrace") << "jemalloc MB: allocated " << stat("stats.allocated") / 1048576
+            << ", active " << stat("stats.active") / 1048576 << ", resident " << stat("stats.resident") / 1048576
+            << ", mapped " << stat("stats.mapped") / 1048576 << ", retained " << stat("stats.retained") / 1048576
+            << ", metadata " << stat("stats.metadata") / 1048576 << ", dirty " << dirty / 1048576
+            << ", muzzy " << muzzy / 1048576 << "; process MB: rss " << rss_kb / 1024 << ", anon " << anon_kb / 1024
+            << ", swap " << swap_kb / 1024 << ", anon+swap " << (anon_kb + swap_kb) / 1024 << LL_ENDL;
+#endif
+    }
+
     void log_alloc_trace()
     {
         if (!thread_alloc_counters().allocated)
@@ -376,6 +433,7 @@ namespace
             LL_INFOS("VBOAllocTrace") << "jemalloc thread counters unavailable; nothing traced" << LL_ENDL;
             return;
         }
+        log_allocator_totals();
         const char* threaded = getenv("__GL_THREADED_OPTIMIZATIONS");
         LL_INFOS("VBOAllocTrace") << "driver heap during pool GL calls (MB; __GL_THREADED_OPTIMIZATIONS="
             << (threaded ? threaded : "unset") << "):" << LL_ENDL;
