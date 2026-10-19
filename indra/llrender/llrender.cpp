@@ -914,6 +914,7 @@ void LLRender::initVertexBuffer()
         // If this doesn't work, we're knee-deep in trouble!
         LL_WARNS() << "Failed to allocate Vertex Buffer for common rendering" << LL_ENDL;
     }
+    mBuffer->setKeepStaging(); // <FS:Luna Witch/> the striders below are written every frame without mapping again
     mBuffer->getVertexStrider(mVerticesp);
     mBuffer->getTexCoord0Strider(mTexcoordsp);
     mBuffer->getColorStrider(mColorsp);

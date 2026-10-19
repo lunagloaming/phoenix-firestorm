@@ -41,6 +41,7 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 |---|---|---|
 | `FSReadOnlyCacheRefreshSecs` | 15 | Minimum interval between index re-reads in a read-only texture cache (0 disables) |
 | `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
+| `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status
@@ -56,7 +57,7 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 - **Where the memory goes** (heap profiling with jemalloc 5.4 on Main in a crowded region, about 18 GB live after 12 minutes):
   - **Geometry, held up to four times:**
     - the viewer's mesh/prim data, about 4.5 GB
-    - a system-memory copy of every vertex and index buffer that the viewer keeps after upload, about 4 GB
+    - a system-memory copy of every vertex and index buffer that the viewer keeps after upload, about 4 GB (now freed, see below)
     - an NVIDIA driver copy of the same buffers, about 4–7 GB
     - the GPU copy itself
   - **Textures are small:** decoded images are only about 0.2 GB of RAM.
@@ -64,6 +65,10 @@ A single-process, multi-session viewer was considered and rejected. Session stat
   - **What made no measurable difference to the driver's copy:** the driver's threaded optimisation (`__GL_THREADED_OPTIMIZATIONS=0`), and the `GL_STATIC_DRAW` usage hint.
   - **Graphics settings barely change the totals:** Alt, with much lower settings, used about 12 GB.
 - **Fixed:** avatar bake morph masks were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
+- **Fixed:** the viewer's own copy of each vertex and index buffer is freed once the buffer has gone unchanged for `FSVBOReleaseStagingSecs` (10 s). If the buffer changes again, the copy is first read back from the GPU, so behaviour is unchanged.
+  - In a crowded venue this cut that memory from about 3.4–4.1 GB to under 0.1 GB, with about 1.7 GB freed at any moment.
+  - Only a trickle of buffers needed reading back (10–15 MB a minute).
+  - No rendering problems were seen.
 - **Linux wrapper:**
   - `FS_JEMALLOC_LIB` selects another jemalloc, for example a system build with profiling.
   - `__GL_THREADED_OPTIMIZATIONS` set by the caller is respected.

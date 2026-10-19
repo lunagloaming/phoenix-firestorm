@@ -251,6 +251,7 @@
 #include "llcallbacklist.h"
 #include "lldeferredsounds.h"
 #include "pipeline.h"
+#include "llvertexbuffer.h" // <FS:Luna Witch/>
 #include "llgesturemgr.h"
 #include "llsky.h"
 #include "llvlcomposition.h"
@@ -5927,6 +5928,12 @@ void LLAppViewer::idle()
     static LLCachedControl<U32> downscale_method(gSavedSettings, "RenderDownScaleMethod");
     gGLManager.mDownScaleMethod = downscale_method;
     LLImageGL::updateClass();
+
+    // <FS:Luna Witch> free the CPU copy of vertex buffers that stay unchanged
+    static LLCachedControl<F32> vbo_release_staging_secs(gSavedSettings, "FSVBOReleaseStagingSecs");
+    LLVertexBuffer::sStagingReleaseSecs = vbo_release_staging_secs;
+    LLVertexBuffer::releaseIdleStaging();
+    // </FS:Luna Witch>
 
     // Service the WorkQueue we use for replies from worker threads.
     // Use function statics for the timeslice setting so we only have to fetch

@@ -260,6 +260,8 @@ public:
     U32 getIndicesSize() const              { return mIndicesSize; }
     U8* getMappedData() const               { return mMappedData; }
     U8* getMappedIndices() const            { return mMappedIndexData; }
+    // <FS:Luna Witch> for buffers whose striders are kept and written without mapping again
+    void setKeepStaging()                   { mKeepStaging = true; }
     U32 getOffset(AttributeType type) const { return mOffsets[type]; }
 
     // these functions assume (and assert on) the current VBO being bound
@@ -301,6 +303,15 @@ protected:
     std::vector<MappedRegion> mMappedVertexRegions;  // list of mMappedData byte ranges that must be sent to GL
     std::vector<MappedRegion> mMappedIndexRegions;   // list of mMappedIndexData byte ranges that must be sent to GL
 
+    // <FS:Luna Witch> Release the CPU copy of buffers that stay unmapped; read it back from GL if mapped again
+    F64     mLastMapTime = 0.0;     // frame time of the last map (or of allocation)
+    U32     mStagedIndex = U32_MAX; // index in the staged buffer list, U32_MAX if not listed
+    bool    mKeepStaging = false;   // never release: someone holds pointers into the CPU copy
+    void touchStaging();
+    void releaseStaging();
+    void restoreStaging();
+    // </FS:Luna Witch>
+
 private:
     // DEPRECATED
     // These function signatures are deprecated, but for some reason
@@ -334,6 +345,11 @@ public:
     static U32 sGLRenderIndices;
     static U32 sLastMask;
     static U32 sVertexCount;
+
+    // <FS:Luna Witch>
+    static F32 sStagingReleaseSecs; // release the CPU copy after this many seconds unmapped (0 keeps it)
+    static void releaseIdleStaging(); // main thread, once per frame
+    // </FS:Luna Witch>
 };
 
 #if LL_PROFILER_ENABLE_RENDER_DOC
