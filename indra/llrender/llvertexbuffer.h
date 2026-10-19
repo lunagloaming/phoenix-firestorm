@@ -307,6 +307,7 @@ protected:
     F64     mLastMapTime = 0.0;     // frame time of the last map (or of allocation)
     U32     mStagedIndex = U32_MAX; // index in the staged buffer list, U32_MAX if not listed
     bool    mKeepStaging = false;   // never release: someone holds pointers into the CPU copy
+    bool    mUploaded = false;      // data has been sent to GL before (FSVBOAllocTrace)
     void touchStaging();
     void releaseStaging();
     void restoreStaging();

@@ -10,6 +10,7 @@ include(LLImage)
 include(LLWindow)
 
 set(llrender_SOURCE_FILES
+    fsvbotrace.cpp # <FS:Luna Witch/>
     llcubemap.cpp
     llcubemaparray.cpp
     llfontbitmapcache.cpp
@@ -38,6 +39,7 @@ set(llrender_SOURCE_FILES
     
 set(llrender_HEADER_FILES
     CMakeLists.txt
+    fsvbotrace.h # <FS:Luna Witch/>
 
     llcubemap.h
     llcubemaparray.h
