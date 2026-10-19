@@ -33,7 +33,8 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 **Phase 3: memory footprint** (found by heap profiling; see Status)
 - **Avatar bake masks:** they were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
 - **Vertex buffer CPU copies:** every vertex and index buffer used to keep a system-memory copy of its contents for its whole lifetime. The copy is now freed once a buffer has gone unchanged for 10 seconds, and is read back from the GPU if the buffer ever changes again.
-- **GPU-copy uploads:** geometry is uploaded through a small staging buffer and a GPU-side copy, instead of directly. On NVIDIA, direct uploads make the driver keep its own system copy of every buffer. This path avoids that in isolation, and it also loads scenes noticeably faster.
+- **GPU-copy uploads:** geometry is uploaded through a small staging buffer and a GPU-side copy, instead of directly. Scenes load noticeably faster. In a standalone test it also stopped the NVIDIA driver keeping its own system copy of every buffer, but in the viewer that saved only a few hundred MB.
+- **Allocator page return (Linux):** the NVIDIA driver reserves heap memory the size of every vertex buffer it creates and never writes most of it. jemalloc's default of keeping freed pages for 10 seconds let those reservations land on pages that were already resident. Freed pages are now returned to the system at once (`FSHeapDecayMs`), which saves about 0.8 GB per viewer in a crowd with no measurable frame-rate cost.
 
 **Outside the viewer: Main/Alt launchers**
 - `main` and `alt` modes pass session-only `--set` overrides (not saved to `settings.xml`).
@@ -51,7 +52,8 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 | `FSLinuxMemPressureThreshold` | 2.0 | `/proc/pressure/memory` "some avg10" percentage treated as low memory (0 disables) |
 | `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
 | `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
-| `FSVBOAllocTrace` | off | Debug, not saved: log once a minute how much heap the GL driver allocates and frees inside the vertex buffer pool's GL calls, with a size histogram (Linux with jemalloc; run with `__GL_THREADED_OPTIMIZATIONS=0`) |
+| `FSHeapDecayMs` | 0 | Linux with jemalloc: milliseconds freed pages stay with the allocator before they go back to the system (negative leaves jemalloc's own setting) |
+| `FSVBOAllocTrace` | off | Debug, not saved: log once a minute how much heap the GL driver allocates and frees inside the vertex buffer pool's GL calls (with a size histogram), jemalloc totals next to the process's RSS and swap, and the call stacks that write the most upload data (Linux with jemalloc; run with `__GL_THREADED_OPTIMIZATIONS=0`) |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status
@@ -76,8 +78,11 @@ Builds cleanly with GCC 14 on Ubuntu 24.04 (`ReleaseFS_open`). Linux-only testin
 
 The runs differ in crowd size and settings, so the totals are indicative. The per-item figures are the reliable ones.
 
+Returning freed pages at once (`FSHeapDecayMs` 0) saves a further 0.8 GB or so. That was measured with two 13-minute runs at the same spot (~75 avatars) that differed only in this setting.
+
 **Still open:**
-- **Most of the NVIDIA driver's memory remains**, even though GPU-copy uploads remove it in a standalone test. Attributing it needs a profile with the driver's threaded optimisation off.
+- **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Object rebuilds keep creating new buffers (3–5 GB a minute of rebuilt geometry, even once a scene has settled), so the reservations keep churning. The next steps are finding which objects keep rebuilding, and trying `glBufferStorage`.
+- **Avatar body meshes:** for the first ten minutes or so after arriving in a crowd, the system body meshes are rewritten about 9–10 GB a minute, probably even when they're hidden under mesh bodies.
 - **Mesh geometry** is now the largest item in the viewer's own memory.
 - **An unattributed "operator delete[]" entry**, about 0.8 GB.
 - **GPU budgets:** both instances still exceed their texture GPU-memory budgets by several GB, because the budget covers only textures.
@@ -98,7 +103,8 @@ autobuild build     -A 64 -c ReleaseFS_open --no-configure -- --ninja --jobs 10 
 When running from the packaged tree (`build-linux-x86_64/newview/packaged/`) or a copy of it, check that `bin/dullahan_host`, `bin/chrome-sandbox` and `bin/SLVoice` are executable (`chmod 755`). A build in a rootless chroot left them at 644, which silently breaks the web login page, profiles, media and voice.
 
 ### Not done (possible future work)
-- Tracking down the rest of the NVIDIA driver's memory, and reducing mesh geometry held for avatars that aren't fully rendered.
+- Fewer buffer creations on object rebuilds, and skipping updates to hidden avatar body meshes.
+- Reducing mesh geometry held for avatars that aren't fully rendered.
 - Per-thread-pool placement on performance or efficiency cores (beyond the launcher's whole-process pinning for Alt).
 - Idle scheduling priority for housekeeping threads such as cache purging.
 - Multiple writers to the shared texture cache index. Its fixed-slot format is inherently single-writer.

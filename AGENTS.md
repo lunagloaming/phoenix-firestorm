@@ -64,6 +64,15 @@ went wrong:
   - pins Alt to the efficiency cores with `taskset` when `/sys/devices/cpu_atom/cpus` exists
   - optionally (`FS_MEMPROF=1`) points `FS_JEMALLOC_LIB` at a jemalloc built with profiling, and sets `MALLOC_CONF`
     for heap snapshots
+  - Main sets `BackgroundYieldTime 0` and `TextureDiscardBackgroundedTime 0`, so a run behaves the same whether or
+    not the window has focus
+- **Unattended runs** (only with the tester's go-ahead; see above):
+  - `multibox.sh main --autologin --set QuitAfterSeconds 780` logs in with the password saved in the test profile
+    and lands at the last location.
+  - After 13 minutes of rendering, `QuitAfterSeconds` logs out properly. `SIGTERM` also exits gracefully, but sends
+    no logout to the sim.
+  - Wait about 90 s between runs.
+  - Copy the log after each run, because the next launch replaces it.
 - **Memory measurement.**
   - **Per-process RSS and swap:** `/proc/<pid>/smaps_rollup`, sampled every 30 s.
   - **GPU memory:** `nvidia-smi`.
@@ -88,6 +97,7 @@ Nothing on this branch has been built or run on macOS yet. Things to check:
 | Login-screen profile notice | Portable (skins and XUI). |
 | Linux memory pressure (PSI), thread naming, jemalloc tracing | `LL_LINUX` only. |
 | Freeing VBO CPU copies (`FSVBOReleaseStagingSecs`), GPU-copy uploads (`FSVBOGPUCopyUpload`) | Skipped on Apple GPUs (`mIsApple`). **Active on Intel Macs with AMD or Intel GPUs**, where macOS GL is 4.1. Both use GL 3.1 calls, but are untested there. |
+| Allocator page return (`FSHeapDecayMs`), `FSVBOAllocTrace` | Linux with jemalloc only (`LL_LINUX`); no-ops on macOS. |
 | Avatar bake-mask texture skip | Portable. |
 | Launchers, wrapper, `taskset` pinning | Linux only. macOS has no CPU affinity. |
 
@@ -117,15 +127,23 @@ The details and numbers are in the README Status section. In short:
   - the viewer's CPU copy of every vertex buffer (now freed after 10 s unchanged)
   - NVIDIA driver memory
   - the GPU copy itself
-- **Textures and the allocator are not the problem.**
-- **Uploads:** NVIDIA keeps a system-memory copy of buffer data uploaded with `glBufferSubData` or `glBufferData(data)`,
-  but not of data written by `glCopyBufferSubData`. That's why uploads now go through a staging buffer, which is
-  also 2–4× faster.
-- **Buffer creation:** `glBufferData(NULL)` makes the driver *malloc* about the buffer's size as a reservation. It
-  is untouched, so it isn't resident in a fresh process, but heap profiles count it.
-  - **Open question:** whether those reservations become resident in the long-running viewer, through the allocator
-    recycling resident pages. The `FSVBOAllocTrace` debug setting logs driver bytes per GL call, to answer that
-    alongside RSS.
+- **Textures are not the problem.**
+- **Uploads:** standalone, NVIDIA keeps a system-memory copy of buffer data uploaded with `glBufferSubData` or
+  `glBufferData(data)`, but not of data written by `glCopyBufferSubData`. Uploads now go through a staging buffer,
+  which is 2–4× faster, but in the viewer it only cut driver memory from 4.06 to 3.65 GB.
+- **Buffer creation:** `glBufferData(NULL)` makes the driver *malloc* about 1.2× the buffer's size as a reservation,
+  about 3.5 GB live in a crowd.
+  - About 0.8 GB of it is never written and only became resident through jemalloc recycling recently freed pages.
+    `FSHeapDecayMs` (default 0) returns freed pages at once and saves that, at no measurable fps cost.
+  - The rest costs real memory. The way to shrink it is fewer buffer creations, or `glBufferStorage`.
+- **Who writes upload data** (`FSVBOAllocTrace` call stacks, ~75 avatars):
+  - Avatar system body meshes (`LLVOAvatar::updateMeshData`, from the shadow pass): ~9–10 GB/min of rewrites of
+    existing buffers in the first minutes after arrival, fading out after about 10 minutes.
+  - Object rebuilds (`rebuildGeom` → `genDrawInfo` → `getGeometryVolume`): 3–5 GB/min, always into new buffers.
+    This is the create/delete churn behind the driver reservations, and it doesn't stop once the scene settles.
+  - Particles: about 0.6 GB/min.
+- **Measuring:** with `FSVBOAllocTrace`, each minute's log has jemalloc's live/active/dirty totals next to the
+  process's anon RSS and swap. Active minus anon+swap is heap that isn't really in memory.
 - **Not from this branch:**
   - Avatars missing all attachments until a scene reload is SL's object-update/interest-list problem.
   - A mesh door that renders broken from behind in `master` but not in the 7.2.4 release is an upstream change or
