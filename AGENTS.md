@@ -96,6 +96,13 @@ Nothing on this branch has been built or run on macOS yet. Things to check:
   `~/Library/Caches` (see `indra/llfilesystem/lldir_mac.cpp`). A self-built viewer can therefore share settings
   and caches with an official Firestorm install on the same Mac. Either keep the official install's folders backed
   up and out of the way, or add an override to `lldir_mac.cpp` first, mirroring `lldir_linux.cpp`.
+- **Running two copies.** macOS won't start a second instance of the same application. The tester's existing
+  workaround is two copies of the app bundle under different names (e.g. `Firestorm Main.app` and
+  `Firestorm Alt.app`).
+  - `open -n -a <app>` forces a new instance and may be worth trying as a lighter alternative.
+  - Either way, both copies use the same user-data and cache folders (see above). The branch's instance slots are
+    what keep a shared cache safe: the first copy owns it, and the second uses it read-only with its own object cache.
+  - Mac versions of the Main/Alt launchers would need to pass the `--set` overrides as app arguments (`open -n -a <app> --args ...`).
 - **Build:** follow `doc/building_macos.md`.
 - **Memory tools:** `footprint`, `vmmap --summary`, `heap`, `leaks`, and Instruments (Allocations,
   VM Tracker). Set `MallocStackLogging=1` for allocation call stacks. On Apple Silicon, GL runs on a translation
