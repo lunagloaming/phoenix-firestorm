@@ -2984,7 +2984,7 @@
     <key>FSVBOAllocTrace</key>
     <map>
       <key>Comment</key>
-      <string>Debug: log, once a minute, how much heap memory the GL driver allocates and frees inside the vertex buffer pool's GL calls (create, upload, delete), with a size histogram. Needs jemalloc (Linux) and __GL_THREADED_OPTIMIZATIONS=0 to attribute the driver's allocations.</string>
+      <string>Debug: log, once a minute, how much heap memory the GL driver allocates and frees inside the vertex buffer pool's GL calls (create, upload, delete), with a size histogram. Needs jemalloc (Linux) and __GL_THREADED_OPTIMIZATIONS=0 to attribute the driver's allocations. Also logs which object groups rebuild their geometry, what they hold and who queued the rebuilds (RebuildTrace).</string>
       <key>Persist</key>
       <integer>0</integer>
       <key>Type</key>
@@ -3013,6 +3013,17 @@
       <string>S32</string>
       <key>Value</key>
       <integer>0</integer>
+    </map>
+    <key>FSOctreeBridgeMoveSlack</key>
+    <map>
+      <key>Comment</key>
+      <string>How far, in multiples of its node's half size, the centre of an object in an attachment, moving linkset or animesh may wander outside its octree node before the object is moved to another node. Each move rebuilds the geometry of both nodes into new vertex buffers, and a swaying flexi prim near a node boundary used to cross it back and forth many times a second. 1 keeps objects in place until they are a whole half size outside; 0 moves them as soon as they leave (the original behaviour).</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>F32</string>
+      <key>Value</key>
+      <real>1.0</real>
     </map>
     <key>FSVBOReleaseStagingSecs</key>
     <map>

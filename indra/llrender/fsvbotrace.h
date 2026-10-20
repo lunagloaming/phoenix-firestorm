@@ -30,6 +30,8 @@
 
 #include "stdtypes.h"
 
+#include <string>
+
 // Debug instrumentation behind the FSVBOAllocTrace setting (LLVertexBuffer::sAllocTrace), logged once a minute
 // under "VBOAllocTrace". Linux with jemalloc only; everything is a no-op elsewhere or while the setting is off.
 // - Heap bytes the GL driver allocates and frees on the calling thread inside the pool's GL calls, from jemalloc's
@@ -67,6 +69,10 @@ namespace FSVBOTrace
 
     // From mapVertexBuffer/mapIndexBuffer: bytes flagged for upload; again: the buffer was uploaded before.
     void traceMapSite(U32 bytes, bool again);
+
+    // Return addresses as " module+0xoffset ..."; resolve with addr2line -f -C -e <module> <offset - 1>.
+    // Empty off Linux. Also used by the viewer's rebuild trace (fsrebuildtrace.cpp).
+    std::string describeFrames(void* const* frames, size_t count);
 
     // Once a minute, from the main thread
     void log();

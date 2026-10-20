@@ -157,7 +157,6 @@ namespace
     std::map<MapSiteKey, MapSite> sMapSites;
 #endif
 
-    // Frames are logged as offsets into their module; resolve with addr2line -f -C -e <module> <offsets>.
     void log_map_sites()
     {
 #if LL_LINUX
@@ -180,19 +179,9 @@ namespace
             << total_again / 1048576 << " MB into buffers uploaded before, " << sites.size() << " call stacks" << LL_ENDL;
         for (size_t i = 0; i < sites.size() && i < 15; ++i)
         {
-            std::ostringstream frames;
-            for (void* frame : sites[i].first)
-            {
-                Dl_info info;
-                if (frame && dladdr(frame, &info) && info.dli_fname)
-                {
-                    const char* module = strrchr(info.dli_fname, '/');
-                    frames << " " << (module ? module + 1 : info.dli_fname) << "+0x" << std::hex
-                           << ((uintptr_t)frame - (uintptr_t)info.dli_fbase) << std::dec;
-                }
-            }
             LL_INFOS("VBOAllocTrace") << "  " << sites[i].second.bytes / 1048576 << " MB (" << sites[i].second.again / 1048576
-                << " MB again), " << sites[i].second.calls << " maps:" << frames.str() << LL_ENDL;
+                << " MB again), " << sites[i].second.calls << " maps:"
+                << FSVBOTrace::describeFrames(sites[i].first.data(), MAP_SITE_FRAMES) << LL_ENDL;
         }
 #endif
     }
@@ -271,6 +260,24 @@ namespace FSVBOTrace
 #else
     void traceMapSite(U32, bool) {}
 #endif
+
+    std::string describeFrames(void* const* frames, size_t count)
+    {
+        std::ostringstream out;
+#if LL_LINUX
+        for (size_t i = 0; i < count; ++i)
+        {
+            Dl_info info;
+            if (frames[i] && dladdr(frames[i], &info) && info.dli_fname)
+            {
+                const char* module = strrchr(info.dli_fname, '/');
+                out << " " << (module ? module + 1 : info.dli_fname) << "+0x" << std::hex
+                    << ((uintptr_t)frames[i] - (uintptr_t)info.dli_fbase) << std::dec;
+            }
+        }
+#endif
+        return out.str();
+    }
 
     void log()
     {

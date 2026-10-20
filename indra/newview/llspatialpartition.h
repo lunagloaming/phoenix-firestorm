@@ -216,6 +216,7 @@ public:
 
     static U32 sNodeCount;
     static bool sNoDelete; //deletion of spatial groups and draw info not allowed if true
+    static F32 sBridgeMoveSlack; // <FS:Luna Witch/> FSOctreeBridgeMoveSlack
 
     typedef std::vector<LLPointer<LLSpatialGroup> > sg_vector_t;
     typedef std::vector<LLPointer<LLSpatialBridge> > bridge_list_t;

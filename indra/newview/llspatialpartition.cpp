@@ -58,6 +58,7 @@
 // <FS:Beq> improved normals debug
 #include "llformat.h"
 #include "llselectmgr.h"
+#include "fsrebuildtrace.h" // <FS:Luna Witch/>
 // </FS:Beq>
 
 extern bool gShiftFrame;
@@ -66,6 +67,7 @@ static U32 sZombieGroups = 0;
 U32 LLSpatialGroup::sNodeCount = 0;
 
 bool LLSpatialGroup::sNoDelete = false;
+F32 LLSpatialGroup::sBridgeMoveSlack = 1.f; // <FS:Luna Witch/>
 
 static F32 sLastMaxTexPriority = 1.f;
 static F32 sCurMaxTexPriority = 1.f;
@@ -234,7 +236,24 @@ bool LLSpatialGroup::updateInGroup(LLDrawable *drawablep, bool immediate)
 
     OctreeNode* parent = mOctreeNode->getOctParent();
 
-    if (mOctreeNode->isInside(drawablep->getPositionGroup()) &&
+    // <FS:Luna Witch> Moving a drawable to another node rebuilds the geometry of both groups into new buffers.
+    // In a spatial bridge (attachments, moving linksets, animesh) a swaying flexi prim near a node boundary crossed
+    // it back and forth, rebuilding a whole attachment many times a second. Let a bridge's drawables stay while
+    // their centre is within the node grown by sBridgeMoveSlack times its half size; the group's bounds still come
+    // from its objects, so culling is unaffected.
+    //if (mOctreeNode->isInside(drawablep->getPositionGroup()) &&
+    bool inside = mOctreeNode->isInside(drawablep->getPositionGroup());
+    if (!inside && sBridgeMoveSlack > 0.f && getSpatialPartition()->asBridge())
+    {
+        LLVector4a offset;
+        offset.setSub(drawablep->getPositionGroup(), mOctreeNode->getCenter());
+        offset.setAbs(offset);
+        LLVector4a limit(mOctreeNode->getSize());
+        limit.mul(1.f + sBridgeMoveSlack);
+        inside = (offset.lessEqual(limit).getGatheredBits() & 0x7) == 0x7;
+    }
+    if (inside &&
+    // </FS:Luna Witch>
         (mOctreeNode->contains(drawablep->getEntry()) ||
          (drawablep->getBinRadius() > mOctreeNode->getSize()[0] &&
                 parent && parent->getElementCount() >= gOctreeMaxCapacity)))
@@ -1025,12 +1044,14 @@ void LLSpatialPartition::move(LLDrawable *drawablep, LLSpatialGroup *curp, bool 
 
     //keep drawable from being garbage collected
     LLPointer<LLDrawable> ptr = drawablep;
+    FSRebuildTrace::moving(drawablep, curp); // <FS:Luna Witch/>
     if (curp && !remove(drawablep, curp))
     {
         OCT_ERRS << "Move couldn't find existing spatial group!" << LL_ENDL;
     }
 
     put(drawablep, was_visible);
+    FSRebuildTrace::moved(drawablep); // <FS:Luna Witch/>
 }
 
 class LLSpatialShift : public OctreeTraveler

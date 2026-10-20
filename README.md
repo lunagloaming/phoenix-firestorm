@@ -34,6 +34,7 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 - **Avatar bake masks:** they were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
 - **Vertex buffer CPU copies:** every vertex and index buffer used to keep a system-memory copy of its contents for its whole lifetime. The copy is now freed once a buffer has gone unchanged for 10 seconds, and is read back from the GPU if the buffer ever changes again.
 - **GPU-copy uploads:** geometry is uploaded through a small staging buffer and a GPU-side copy, instead of directly. Scenes load noticeably faster. In a standalone test it also stopped the NVIDIA driver keeping its own system copy of every buffer, but in the viewer that saved only a few hundred MB.
+- **Flexi prims in attachments:** a swaying flexi prim near an octree node boundary inside its attachment crossed it back and forth, and every crossing rebuilt the geometry of both nodes into new vertex buffers. One avatar's attachment rebuilt about 500 MB a minute that way. Objects in attachments, moving linksets and animesh now stay in their node until they are well outside it (`FSOctreeBridgeMoveSlack`), which cut that to about 20 MB a minute.
 - **Allocator page return (Linux):** the NVIDIA driver reserves heap memory the size of every vertex buffer it creates and never writes most of it. jemalloc's default of keeping freed pages for 10 seconds let those reservations land on pages that were already resident. Freed pages are now returned to the system at once (`FSHeapDecayMs`), which saves about 0.8 GB per viewer in a crowd with no measurable frame-rate cost.
 
 **Outside the viewer: Main/Alt launchers**
@@ -53,7 +54,8 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 | `FSVBOReleaseStagingSecs` | 10 | Free the CPU copy of a vertex/index buffer after this many seconds unchanged; read back from the GPU if it changes again (0 keeps every copy; not used on Apple GPUs) |
 | `FSVBOGPUCopyUpload` | on | Upload vertex/index data through a staging buffer and a GPU copy rather than directly (not used on Apple GPUs) |
 | `FSHeapDecayMs` | 0 | Linux with jemalloc: milliseconds freed pages stay with the allocator before they go back to the system (negative leaves jemalloc's own setting) |
-| `FSVBOAllocTrace` | off | Debug, not saved: log once a minute how much heap the GL driver allocates and frees inside the vertex buffer pool's GL calls (with a size histogram), jemalloc totals next to the process's RSS and swap, and the call stacks that write the most upload data (Linux with jemalloc; run with `__GL_THREADED_OPTIMIZATIONS=0`) |
+| `FSOctreeBridgeMoveSlack` | 1 | How far, in multiples of its octree node's half size, an object in an attachment, moving linkset or animesh may move outside its node before it is moved to another one (each move rebuilds both nodes' geometry). 0 restores the original behaviour |
+| `FSVBOAllocTrace` | off | Debug, not saved: log once a minute how much heap the GL driver allocates and frees inside the vertex buffer pool's GL calls (with a size histogram), jemalloc totals next to the process's RSS and swap, and the call stacks that write the most upload data (Linux with jemalloc; run with `__GL_THREADED_OPTIMIZATIONS=0`). Also logs which object groups rebuild their geometry (`RebuildTrace`): by kind of object, the groups that rebuild most, octree moves, and the call stacks that queued the rebuilds |
 | `FSMultiBoxProfile` | *(empty)* | Tuning profile name set by a launcher via `--set`; shown on the login screen. Not persisted. |
 
 ### Status
@@ -81,7 +83,7 @@ The runs differ in crowd size and settings, so the totals are indicative. The pe
 Returning freed pages at once (`FSHeapDecayMs` 0) saves a further 0.8 GB or so. That was measured with two 13-minute runs at the same spot (~75 avatars) that differed only in this setting.
 
 **Still open:**
-- **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Object rebuilds keep creating new buffers (3–5 GB a minute of rebuilt geometry, even once a scene has settled), so the reservations keep churning. The next steps are finding which objects keep rebuilding, and trying `glBufferStorage`.
+- **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Object rebuilds keep creating new buffers, so the reservations keep churning. In a settled crowd about 1–1.5 GB of geometry a minute is still rebuilt, about 90% of it other avatars' attachments. After the flexi fix, most of that is rigged attachments rebuilt on scripted alpha changes (fades and blinks), each rebuilding the whole attachment. `glBufferStorage` is still untried.
 - **Avatar body meshes:** for the first ten minutes or so after arriving in a crowd, the system body meshes are rewritten about 9–10 GB a minute, probably even when they're hidden under mesh bodies.
 - **Mesh geometry** is now the largest item in the viewer's own memory.
 - **An unattributed "operator delete[]" entry**, about 0.8 GB.

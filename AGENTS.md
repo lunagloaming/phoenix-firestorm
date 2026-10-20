@@ -97,7 +97,8 @@ Nothing on this branch has been built or run on macOS yet. Things to check:
 | Login-screen profile notice | Portable (skins and XUI). |
 | Linux memory pressure (PSI), thread naming, jemalloc tracing | `LL_LINUX` only. |
 | Freeing VBO CPU copies (`FSVBOReleaseStagingSecs`), GPU-copy uploads (`FSVBOGPUCopyUpload`) | Skipped on Apple GPUs (`mIsApple`). **Active on Intel Macs with AMD or Intel GPUs**, where macOS GL is 4.1. Both use GL 3.1 calls, but are untested there. |
-| Allocator page return (`FSHeapDecayMs`), `FSVBOAllocTrace` | Linux with jemalloc only (`LL_LINUX`); no-ops on macOS. |
+| Allocator page return (`FSHeapDecayMs`), `FSVBOAllocTrace` | Linux with jemalloc only (`LL_LINUX`); no-ops on macOS. `RebuildTrace` counts work everywhere, call stacks are Linux only. |
+| Octree move slack for attachments (`FSOctreeBridgeMoveSlack`) | Portable. |
 | Avatar bake-mask texture skip | Portable. |
 | Launchers, wrapper, `taskset` pinning | Linux only. macOS has no CPU affinity. |
 
@@ -142,6 +143,13 @@ The details and numbers are in the README Status section. In short:
   - Object rebuilds (`rebuildGeom` → `genDrawInfo` → `getGeometryVolume`): 3–5 GB/min, always into new buffers.
     This is the create/delete churn behind the driver reservations, and it doesn't stop once the scene settles.
   - Particles: about 0.6 GB/min.
+- **Which objects rebuild** (`RebuildTrace`, same setting; ~70 avatars): in a settled scene 0.8–1.5 GB/min of
+  volume geometry is rebuilt into new buffers, about 90% other avatars' attachments. A whole group (an attachment's
+  octree node) is rebuilt whenever one of its objects changes, so one busy prim costs its whole attachment.
+  - Flexi prims crossing octree node boundaries inside their attachment: fixed with `FSOctreeBridgeMoveSlack`.
+  - Scripted alpha changes on rigged attachments (`setTEColor` from object updates → `mLODChanged`): the largest
+    remaining source. Since SL-16861 (2022) every colour change also takes the full-rebuild path.
+  - A sculpty rebuild loop (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`) in bursts.
 - **Measuring:** with `FSVBOAllocTrace`, each minute's log has jemalloc's live/active/dirty totals next to the
   process's anon RSS and swap. Active minus anon+swap is heap that isn't really in memory.
 - **Not from this branch:**
