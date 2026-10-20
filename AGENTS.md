@@ -98,7 +98,7 @@ Nothing on this branch has been built or run on macOS yet. Things to check:
 | Linux memory pressure (PSI), thread naming, jemalloc tracing | `LL_LINUX` only. |
 | Freeing VBO CPU copies (`FSVBOReleaseStagingSecs`), GPU-copy uploads (`FSVBOGPUCopyUpload`) | Skipped on Apple GPUs (`mIsApple`). **Active on Intel Macs with AMD or Intel GPUs**, where macOS GL is 4.1. Both use GL 3.1 calls, but are untested there. |
 | Allocator page return (`FSHeapDecayMs`), `FSVBOAllocTrace` | Linux with jemalloc only (`LL_LINUX`); no-ops on macOS. `RebuildTrace` counts work everywhere, call stacks are Linux only. |
-| Octree move slack for attachments (`FSOctreeBridgeMoveSlack`) | Portable. |
+| Octree move slack for attachments (`FSOctreeBridgeMoveSlack`), in-place colour updates (`FSInPlaceColorUpdates`) | Portable. |
 | Avatar bake-mask texture skip | Portable. |
 | Launchers, wrapper, `taskset` pinning | Linux only. macOS has no CPU affinity. |
 
@@ -147,8 +147,9 @@ The details and numbers are in the README Status section. In short:
   volume geometry is rebuilt into new buffers, about 90% other avatars' attachments. A whole group (an attachment's
   octree node) is rebuilt whenever one of its objects changes, so one busy prim costs its whole attachment.
   - Flexi prims crossing octree node boundaries inside their attachment: fixed with `FSOctreeBridgeMoveSlack`.
-  - Scripted alpha changes on rigged attachments (`setTEColor` from object updates → `mLODChanged`): the largest
-    remaining source. Since SL-16861 (2022) every colour change also takes the full-rebuild path.
+  - Colour changes: a change that keeps the face's alpha class now updates in place (`FSInPlaceColorUpdates`;
+    every colour change took the full-rebuild path since SL-16861, 2022). Visually checked with tint HUDs.
+  - Scripted hide/show on rigged attachments (alpha 0 ↔ visible, flipbook-style): the largest remaining source.
   - A sculpty rebuild loop (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`) in bursts.
 - **Measuring:** with `FSVBOAllocTrace`, each minute's log has jemalloc's live/active/dirty totals next to the
   process's anon RSS and swap. Active minus anon+swap is heap that isn't really in memory.

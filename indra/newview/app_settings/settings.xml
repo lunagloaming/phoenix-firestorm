@@ -3014,6 +3014,17 @@
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>FSInPlaceColorUpdates</key>
+    <map>
+      <key>Comment</key>
+      <string>Update a face's colour or alpha in its existing vertex buffer when the change can't move it to another render batch (it stays invisible, blended, nearly opaque or opaque). Otherwise every colour change rebuilds the object's whole group, for an attachment the whole attachment, and scripted fades and blinks on attachments did that thousands of times a minute in a crowd. Off restores the original behaviour.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
     <key>FSOctreeBridgeMoveSlack</key>
     <map>
       <key>Comment</key>

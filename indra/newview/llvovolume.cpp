@@ -2545,7 +2545,21 @@ S32 LLVOVolume::setTEColor(const U8 te, const LLColor4& color)
     else if (color != tep->getColor())
     {
         F32 old_alpha = tep->getColor().mV[3];
-        if (color.mV[3] != old_alpha)
+        // <FS:Luna Witch> A colour change used to rebuild the object's whole spatial group (for an attachment, the
+        // whole attachment) into new vertex buffers. Scripted fades and blinks on rigged attachments did that
+        // thousands of times a minute in a crowd. Colour and alpha are per vertex, so when the face stays in the
+        // same render batch (same alpha class: invisible, blended, nearly opaque, opaque) the in-place path below
+        // (REBUILD_COLOR + dirtyMesh) is enough. GLTF faces take their colour from the material: unchanged.
+        static LLCachedControl<bool> in_place_colour(gSavedSettings, "FSInPlaceColorUpdates", true);
+        auto alpha_class = [tep](F32 alpha)
+        {
+            return (alpha <= 0.f && tep->getGlow() == 0.f) ? 0 : alpha < 0.999f ? 1 : alpha < 1.f ? 2 : 3;
+        };
+        const bool same_batch = in_place_colour && !tep->getGLTFRenderMaterial()
+            && alpha_class(old_alpha) == alpha_class(color.mV[3]);
+        //if (color.mV[3] != old_alpha)
+        if (color.mV[3] != old_alpha && !same_batch)
+        // </FS:Luna Witch>
         {
             gPipeline.markTextured(mDrawable);
             //treat this alpha change as an LoD update since render batches may need to get rebuilt
@@ -2556,7 +2570,8 @@ S32 LLVOVolume::setTEColor(const U8 te, const LLColor4& color)
         if (mDrawable.notNull() && retval)
         {
             // These should only happen on updates which are not the initial update.
-            mColorChanged = true;
+            //mColorChanged = true;
+            mColorChanged = mColorChanged || !same_batch; // <FS:Luna Witch/>
             mDrawable->setState(LLDrawable::REBUILD_COLOR);
             shrinkWrap();
             dirtyMesh();
