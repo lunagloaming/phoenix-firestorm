@@ -50,6 +50,10 @@ namespace FSRebuildTrace
     void moving(LLDrawable* drawable, LLSpatialGroup* from);
     void moved(LLDrawable* drawable);
 
+    // LLVOVolume::setTEColor: a face's colour changed from one alpha class to another (LLFace::fsAlphaClass),
+    // updated in place or by rebuilding the group
+    void colourChange(S32 old_class, S32 new_class, bool in_place);
+
     // LLVolumeGeometryManager::rebuildGeom, once the group's new buffers are filled
     void rebuilt(LLSpatialGroup* group, U32 bytes);
 

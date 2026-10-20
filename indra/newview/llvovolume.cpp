@@ -2546,17 +2546,23 @@ S32 LLVOVolume::setTEColor(const U8 te, const LLColor4& color)
     {
         F32 old_alpha = tep->getColor().mV[3];
         // <FS:Luna Witch> A colour change used to rebuild the object's whole spatial group (for an attachment, the
-        // whole attachment) into new vertex buffers. Scripted fades and blinks on rigged attachments did that
-        // thousands of times a minute in a crowd. Colour and alpha are per vertex, so when the face stays in the
-        // same render batch (same alpha class: invisible, blended, nearly opaque, opaque) the in-place path below
-        // (REBUILD_COLOR + dirtyMesh) is enough. GLTF faces take their colour from the material: unchanged.
+        // whole attachment) into new vertex buffers. Scripted fades, blinks and hide/show "flipbook" animations on
+        // rigged attachments did that thousands of times a minute in a crowd. Colour and alpha are per vertex, so
+        // when the face can stay in its render batch the in-place path below (REBUILD_COLOR + dirtyMesh) is enough:
+        // - its alpha class (LLFace::fsAlphaClass) doesn't change;
+        // - it is hidden: it keeps its batch and LLFace::getGeometryVolume gives it degenerate triangles;
+        // - it is shown again while still in the batch it was put in with the same class.
+        // GLTF faces take their colour from the material: unchanged.
         static LLCachedControl<bool> in_place_colour(gSavedSettings, "FSInPlaceColorUpdates", true);
-        auto alpha_class = [tep](F32 alpha)
-        {
-            return (alpha <= 0.f && tep->getGlow() == 0.f) ? 0 : alpha < 0.999f ? 1 : alpha < 1.f ? 2 : 3;
-        };
+        const S32 old_class = LLFace::fsAlphaClass(old_alpha, tep->getGlow());
+        const S32 new_class = LLFace::fsAlphaClass(color.mV[3], tep->getGlow());
+        LLFace* face = mDrawable.notNull() && te < mDrawable->getNumFaces() ? mDrawable->getFace(te) : nullptr;
+        const bool batched = face && face->getTEOffset() == te && face->getVertexBuffer() && face->getIndicesCount();
         const bool same_batch = in_place_colour && !tep->getGLTFRenderMaterial()
-            && alpha_class(old_alpha) == alpha_class(color.mV[3]);
+            && (old_class == new_class
+                || (batched && new_class == 0 && LLFace::fsCanHideInPlace())
+                || (batched && old_class == 0 && face->mFSBatchedAlphaClass == new_class));
+        FSRebuildTrace::colourChange(old_class, new_class, same_batch);
         //if (color.mV[3] != old_alpha)
         if (color.mV[3] != old_alpha && !same_batch)
         // </FS:Luna Witch>
@@ -5641,6 +5647,13 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
     }
 
     LL_LABEL_VERTEX_BUFFER(facep->getVertexBuffer(), LLRenderPass::lookupPassName(type));
+
+    // <FS:Luna Witch> remember which alpha class this face was batched with (LLVOVolume::setTEColor)
+    if (const LLTextureEntry* te = facep->getTextureEntry())
+    {
+        facep->mFSBatchedAlphaClass = (S8)LLFace::fsAlphaClass(te->getColor().mV[3], te->getGlow());
+    }
+    // </FS:Luna Witch>
 
     U32 passType = type;
 

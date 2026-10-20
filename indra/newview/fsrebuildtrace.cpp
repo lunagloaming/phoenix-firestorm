@@ -160,6 +160,10 @@ namespace
         ECategory category = CAT_STATIC;
     } sPendingMove;
 
+    // Colour changes by old and new alpha class (invisible, blended, nearly opaque, opaque), and how many were in place
+    U64 sColourChanges[4][4] = {};
+    U64 sColourInPlace[4][4] = {};
+
     U64 sBytesByRebuildBit[REBUILD_BIT_COUNT + 1] = {}; // last: no drawable flags pending
     U64 sAlphaOnlyBytes = 0;
     U64 sUnattributedBytes = 0;
@@ -295,6 +299,21 @@ namespace
         LL_INFOS("RebuildTrace") << "  MB by pending drawable flags: " << bits.str() << "none (group dirtied) "
             << sBytesByRebuildBit[REBUILD_BIT_COUNT] / 1048576 << LL_ENDL;
 
+        static const char* const class_names[4] = { "invisible", "blended", "nearly opaque", "opaque" };
+        std::ostringstream colours;
+        for (int from = 0; from < 4; ++from)
+        {
+            for (int to = 0; to < 4; ++to)
+            {
+                if (sColourChanges[from][to])
+                {
+                    colours << " " << class_names[from] << "->" << class_names[to] << " " << sColourChanges[from][to]
+                        << " (" << sColourInPlace[from][to] << " in place);";
+                }
+            }
+        }
+        LL_INFOS("RebuildTrace") << "  colour changes:" << colours.str() << LL_ENDL;
+
         auto groups = sorted_by(sGroups, [](const GroupStat& s) { return s.bytes; });
         for (size_t i = 0; i < groups.size() && i < 20; ++i)
         {
@@ -327,6 +346,8 @@ namespace
         sGroupTriggers.clear();
         sDrawableTriggers.clear();
         std::fill(std::begin(sMoves), std::end(sMoves), MoveStat());
+        memset(sColourChanges, 0, sizeof(sColourChanges));
+        memset(sColourInPlace, 0, sizeof(sColourInPlace));
         std::fill(std::begin(sBytesByRebuildBit), std::end(sBytesByRebuildBit), 0);
         sAlphaOnlyBytes = 0;
         sUnattributedBytes = 0;
@@ -407,6 +428,20 @@ namespace FSRebuildTrace
             ++sMoves[sPendingMove.category].same_group;
         }
         sPendingMove = PendingMove();
+    }
+
+    void colourChange(S32 old_class, S32 new_class, bool in_place)
+    {
+        if (!LLVertexBuffer::sAllocTrace || old_class < 0 || old_class > 3 || new_class < 0 || new_class > 3)
+        {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(sMutex);
+        ++sColourChanges[old_class][new_class];
+        if (in_place)
+        {
+            ++sColourInPlace[old_class][new_class];
+        }
     }
 
     void rebuilt(LLSpatialGroup* group, U32 bytes)

@@ -61,6 +61,7 @@
 #include "rlvhandler.h"
 // [/RLVa:KB]
 #include "llperfstats.h"
+#include "lldrawpoolalpha.h" // <FS:Luna Witch/>
 
 #if LL_LINUX
 // Work-around spurious used before init warning on Vector4a
@@ -1525,6 +1526,20 @@ bool LLFace::getGeometryVolume(const LLVolume& volume,
                 *idx++ = vf.mIndices[i]+index_offset;
             }
         }
+
+        // <FS:Luna Witch> A face hidden in place (made invisible while it stays in its render batch, see
+        // LLVOVolume::setTEColor) gets degenerate triangles, so it draws nothing until it is shown again or
+        // its group is rebuilt. Debug views that draw invisible faces put them in batches on purpose.
+        if (tep && !tep->getGLTFRenderMaterial() && fsAlphaClass(tep->getColor().mV[3], tep->getGlow()) == 0
+            && fsCanHideInPlace())
+        {
+            U16* idx = (U16*) indicesp.get();
+            for (S32 i = 0; i < num_indices; ++i)
+            {
+                idx[i] = index_offset;
+            }
+        }
+        // </FS:Luna Witch>
     }
 
 
@@ -2831,8 +2846,25 @@ void LLFace::setDefaultTexture(U32 nChannel, bool fShowDefault) const
 }
 // [/SL:KB]
 
+// <FS:Luna Witch>
+// static
+S32 LLFace::fsAlphaClass(F32 alpha, F32 glow)
+{
+    return (alpha <= 0.f && glow == 0.f) ? 0 : alpha < 0.999f ? 1 : alpha < 1.f ? 2 : 3;
+}
+
+// static
+bool LLFace::fsCanHideInPlace()
+{
+    return !LLDrawPoolAlpha::sShowDebugAlpha
+        && !(LLPipeline::sRenderHighlight
+             && (LLPipeline::getRenderScriptedBeacons() || LLPipeline::getRenderScriptedTouchBeacons()));
+}
+// </FS:Luna Witch>
+
 void LLFace::setVertexBuffer(LLVertexBuffer* buffer)
 {
+    mFSBatchedAlphaClass = -1; // <FS:Luna Witch/> set again when the face is put into a batch
     if (buffer)
     {
         LLSculptIDSize::instance().inc(mDrawablep, buffer->getSize() + buffer->getIndicesSize());
@@ -2849,6 +2881,7 @@ void LLFace::setVertexBuffer(LLVertexBuffer* buffer)
 
 void LLFace::clearVertexBuffer()
 {
+    mFSBatchedAlphaClass = -1; // <FS:Luna Witch/>
     if (mVertexBuffer)
     {
         LLSculptIDSize::instance().dec(mDrawablep);
