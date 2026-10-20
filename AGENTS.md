@@ -150,8 +150,10 @@ The details and numbers are in the README Status section. In short:
   - Colour changes: a change that keeps the face's alpha class now updates in place (`FSInPlaceColorUpdates`;
     every colour change took the full-rebuild path since SL-16861, 2022). Hidden faces keep their batch with
     degenerate indices (`LLFace::getGeometryVolume`) and are shown again in place when their batched alpha class
-    (`LLFace::mFSBatchedAlphaClass`) matches. Debug views that draw invisible faces (show transparent, highlights
-    with scripted beacons) fall back to full rebuilds. Checked with tint HUDs and a hide/show test cube.
+    (`LLFace::mFSBatchedAlphaClass`) matches. A group rebuild within 10 s of a hide keeps the face batched in its
+    pre-hide pool (`LLFace::fsKeepHiddenInBatch`), otherwise sibling faces of a flipbook kept dropping each other
+    out. Debug views that draw invisible faces (show transparent, highlights with scripted beacons) fall back to
+    full rebuilds. Checked with tint HUDs and a hide/show test cube; in a crowd ~60% of shows are now in place.
   - A sculpty rebuild loop (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`) in bursts.
 - **Measuring:** with `FSVBOAllocTrace`, each minute's log has jemalloc's live/active/dirty totals next to the
   process's anon RSS and swap. Active minus anon+swap is heap that isn't really in memory.

@@ -293,6 +293,14 @@ public:
     // Alpha class the face had when it was last put into a render batch, or -1 if it has no vertex buffer.
     // A face hidden in place keeps its batch, and can be shown again in place if its new class matches.
     S8 mFSBatchedAlphaClass = -1;
+    // Alpha class the face had before it was hidden in place, or -1, and when it was hidden. A group rebuild soon
+    // after keeps the face in the batch of that class (fsKeepHiddenInBatch), so scripted hide/show animations
+    // don't drop it, which would make its next show rebuild the group again.
+    S8 mFSHiddenFromAlphaClass = -1;
+    F32 mFSHiddenTime = 0.f;
+    bool fsKeepHiddenInBatch(const LLTextureEntry* te) const;
+    // A representative alpha for an alpha class
+    static F32 fsClassAlpha(S32 alpha_class);
     // </FS:Luna Witch>
 
 private:

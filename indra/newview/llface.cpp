@@ -2853,6 +2853,20 @@ S32 LLFace::fsAlphaClass(F32 alpha, F32 glow)
     return (alpha <= 0.f && glow == 0.f) ? 0 : alpha < 0.999f ? 1 : alpha < 1.f ? 2 : 3;
 }
 
+bool LLFace::fsKeepHiddenInBatch(const LLTextureEntry* te) const
+{
+    constexpr F32 KEEP_HIDDEN_SECS = 10.f; // longer, and it is probably hidden for good (e.g. a body alpha cut)
+    return te && !te->getGLTFRenderMaterial() && mFSHiddenFromAlphaClass > 0
+        && fsAlphaClass(te->getColor().mV[3], te->getGlow()) == 0
+        && gFrameTimeSeconds - mFSHiddenTime < KEEP_HIDDEN_SECS && fsCanHideInPlace();
+}
+
+// static
+F32 LLFace::fsClassAlpha(S32 alpha_class)
+{
+    return alpha_class == 1 ? 0.5f : alpha_class == 2 ? 0.9995f : 1.f;
+}
+
 // static
 bool LLFace::fsCanHideInPlace()
 {

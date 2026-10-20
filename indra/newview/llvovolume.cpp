@@ -2563,6 +2563,11 @@ S32 LLVOVolume::setTEColor(const U8 te, const LLColor4& color)
                 || (batched && new_class == 0 && LLFace::fsCanHideInPlace())
                 || (batched && old_class == 0 && face->mFSBatchedAlphaClass == new_class));
         FSRebuildTrace::colourChange(old_class, new_class, same_batch);
+        if (face && face->getTEOffset() == te && new_class == 0 && old_class != 0)
+        {
+            face->mFSHiddenFromAlphaClass = (S8)(same_batch ? old_class : -1);
+            face->mFSHiddenTime = gFrameTimeSeconds;
+        }
         //if (color.mV[3] != old_alpha)
         if (color.mV[3] != old_alpha && !same_batch)
         // </FS:Luna Witch>
@@ -5648,10 +5653,12 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
 
     LL_LABEL_VERTEX_BUFFER(facep->getVertexBuffer(), LLRenderPass::lookupPassName(type));
 
-    // <FS:Luna Witch> remember which alpha class this face was batched with (LLVOVolume::setTEColor)
+    // <FS:Luna Witch> remember which alpha class this face was batched with (LLVOVolume::setTEColor). A face hidden
+    // in place keeps the render pool of its class before hiding, so that is the class its batch fits.
     if (const LLTextureEntry* te = facep->getTextureEntry())
     {
-        facep->mFSBatchedAlphaClass = (S8)LLFace::fsAlphaClass(te->getColor().mV[3], te->getGlow());
+        const S32 alpha_class = LLFace::fsAlphaClass(te->getColor().mV[3], te->getGlow());
+        facep->mFSBatchedAlphaClass = (S8)(alpha_class == 0 ? facep->mFSHiddenFromAlphaClass : alpha_class);
     }
     // </FS:Luna Witch>
 
@@ -6256,6 +6263,22 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
 
                     bool force_simple = (facep->getPixelArea() < FORCE_SIMPLE_RENDER_AREA);
                     U32 type = gPipeline.getPoolTypeFromTE(te, tex);
+                    // <FS:Luna Witch> A face hidden in place moments ago keeps the pool of its class before hiding, so it
+                    // stays batched (with degenerate triangles) and can be shown again in place. Faces that would be
+                    // drawn as alpha masks when visible can't be reproduced while hidden: those drop out as before.
+                    bool keep_hidden = facep->fsKeepHiddenInBatch(te);
+                    if (keep_hidden)
+                    {
+                        LLTextureEntry visible_te(*te);
+                        visible_te.setAlpha(LLFace::fsClassAlpha(facep->mFSHiddenFromAlphaClass));
+                        const U32 visible_type = gPipeline.getPoolTypeFromTE(&visible_te, tex);
+                        keep_hidden = visible_type != LLDrawPool::POOL_ALPHA || facep->mFSHiddenFromAlphaClass == 1;
+                        if (keep_hidden)
+                        {
+                            type = visible_type;
+                        }
+                    }
+                    // </FS:Luna Witch>
                     if (is_pbr && gltf_mat && gltf_mat->mAlphaMode != LLGLTFMaterial::ALPHA_MODE_BLEND)
                     {
                         type = LLDrawPool::POOL_GLTF_PBR;
@@ -6318,7 +6341,8 @@ void LLVolumeGeometryManager::rebuildGeom(LLSpatialGroup* group)
                             }
                             // <FS:ND> Even more crash avoidance ...
                             //if (alpha > 0.f || te->getGlow() > 0.f)
-                            if (alpha > 0.f || (te && te->getGlow() > 0.f))
+                            //if (alpha > 0.f || (te && te->getGlow() > 0.f))
+                            if (alpha > 0.f || (te && te->getGlow() > 0.f) || keep_hidden) // <FS:Luna Witch/>
                             { //only treat as alpha in the pipeline if < 100% transparent
                                 drawablep->setState(LLDrawable::HAS_ALPHA);
                                 add_face(sAlphaFaces, alpha_count, facep);
