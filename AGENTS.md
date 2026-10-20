@@ -84,6 +84,44 @@ went wrong:
 - **Standalone GL experiments** are much faster than viewer runs for driver questions. A small C program with a
   headless EGL or GLX context, plus `/proc/self/status` and jemalloc's `thread.allocatedp`/`thread.deallocatedp`,
   answered most of them.
+- **Agent test copy.** When the tester wants their own viewer uninterrupted, test builds go into a second copy of the
+  install with its own user-data folder (and its own copy of the cache), launched by its own `multibox.sh`. Only
+  install there; update the tester's install only when asked. Unattended runs log in an account the tester stays
+  off during tests. To tell the test viewer from theirs, check `FIRESTORM_X64_USER_DIR` in `/proc/<pid>/environ`,
+  not the newest process.
+- **Builds.** Run them at normal priority. A change to a widely included header (`llface.h`,
+  `llspatialpartition.h`, which `pipeline.h` pulls in) recompiles ~180 files; a `.cpp`-only change takes a few.
+  Packaging adds several minutes to every build.
+- **Reading `RebuildTrace`:** each minute logs rebuilt bytes by kind of object and what the groups hold, octree
+  moves and their reasons, colour changes by alpha class (and how many were in place), the 20 groups that rebuilt
+  most, and the call stacks that queued group and drawable rebuilds. Stacks are module offsets:
+  - `addr2line -f -C -e <installed bin/do-not-directly-run-firestorm-bin> <offset - 1>` gives function names
+    quickly.
+  - The build tree's unstripped `build-linux-x86_64/newview/firestorm-bin` (same build ID) also gives
+    `-i` file:line, but takes minutes per lookup.
+  - A group queued from `LLVOVolume::updateGeometry` only passes on a drawable request; the drawable stacks show
+    the real cause.
+- **Visual check for colour/alpha changes:** a box with this script, on the ground and worn. Each step says in
+  local chat what should be visible. Compare with `FSInPlaceColorUpdates` off.
+  ```lsl
+  list STEPS = ["opaque red", <1,0,0>, 1.0, "HIDDEN", <1,0,0>, 0.0, "opaque red again", <1,0,0>, 1.0,
+      "HIDDEN", <1,0,0>, 0.0, "opaque GREEN", <0,1,0>, 1.0, "half see-through blue", <0,0,1>, 0.5,
+      "HIDDEN", <0,0,1>, 0.0, "half see-through blue again", <0,0,1>, 0.5,
+      "HIDDEN (turning yellow unseen)", <1,1,0>, 0.0, "opaque YELLOW", <1,1,0>, 1.0];
+  integer step;
+  default
+  {
+      state_entry() { step = 0; llSetTimerEvent(2.0); }
+      attach(key id) { step = 0; }
+      timer()
+      {
+          llSetLinkPrimitiveParamsFast(LINK_SET, [PRIM_COLOR, ALL_SIDES,
+              llList2Vector(STEPS, step * 3 + 1), llList2Float(STEPS, step * 3 + 2)]);
+          llOwnerSay((string)(step + 1) + ": " + llList2String(STEPS, step * 3));
+          step = (step + 1) % (llGetListLength(STEPS) / 3);
+      }
+  }
+  ```
 - **Comparisons.** The process is named `do-not-directly-run-firestorm-bin`. For baseline-vs-branch runs, restore
   the same starting cache before each run, use the same region and duration, and note crowd size and settings.
 
@@ -143,18 +181,25 @@ The details and numbers are in the README Status section. In short:
   - Object rebuilds (`rebuildGeom` → `genDrawInfo` → `getGeometryVolume`): 3–5 GB/min, always into new buffers.
     This is the create/delete churn behind the driver reservations, and it doesn't stop once the scene settles.
   - Particles: about 0.6 GB/min.
-- **Which objects rebuild** (`RebuildTrace`, same setting; ~70 avatars): in a settled scene 0.8–1.5 GB/min of
-  volume geometry is rebuilt into new buffers, about 90% other avatars' attachments. A whole group (an attachment's
-  octree node) is rebuilt whenever one of its objects changes, so one busy prim costs its whole attachment.
-  - Flexi prims crossing octree node boundaries inside their attachment: fixed with `FSOctreeBridgeMoveSlack`.
-  - Colour changes: a change that keeps the face's alpha class now updates in place (`FSInPlaceColorUpdates`;
-    every colour change took the full-rebuild path since SL-16861, 2022). Hidden faces keep their batch with
-    degenerate indices (`LLFace::getGeometryVolume`) and are shown again in place when their batched alpha class
-    (`LLFace::mFSBatchedAlphaClass`) matches. A group rebuild within 10 s of a hide keeps the face batched in its
-    pre-hide pool (`LLFace::fsKeepHiddenInBatch`), otherwise sibling faces of a flipbook kept dropping each other
-    out. Debug views that draw invisible faces (show transparent, highlights with scripted beacons) fall back to
-    full rebuilds. Checked with tint HUDs and a hide/show test cube; in a crowd ~60% of shows are now in place.
-  - A sculpty rebuild loop (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`) in bursts.
+- **Which objects rebuild** (`RebuildTrace`, same setting; ~70 avatars). A whole spatial group (for an attachment,
+  usually the whole attachment) is rebuilt into new buffers whenever one of its objects changes, so one busy prim
+  costs its whole attachment. About 90% of it is other avatars' attachments. In a settled scene it was 0.8–2 GB/min;
+  with the fixes below it is 0.3–0.7 GB/min.
+  - **Flexi prims crossing octree nodes** inside their attachment's spatial bridge: every crossing removed the prim
+    from one group and added it to another, rebuilding both. Fixed with `FSOctreeBridgeMoveSlack`
+    (`LLSpatialGroup::updateInGroup`). Culling is unaffected because group bounds come from the objects
+    (`LLViewerOctreeGroup::rebound`), not the node box.
+  - **Colour changes** (`LLVOVolume::setTEColor`): every change took the full-rebuild path, alpha changes as an LOD
+    change and, since SL-16861 (2022, before the PBR renderer), plain tints too. Faces now stay in place when their
+    alpha class (`LLFace::fsAlphaClass`: invisible, blended, nearly opaque, opaque) doesn't change.
+  - **Scripted hide/show (flipbooks):** a hidden face keeps its batch with degenerate indices
+    (`LLFace::getGeometryVolume`) and is shown again in place when its batched class (`mFSBatchedAlphaClass`)
+    matches. A group rebuild within 10 s of a hide keeps the face batched in its pre-hide pool
+    (`LLFace::fsKeepHiddenInBatch`); without that, sibling faces of a flipbook kept dropping each other out. Debug
+    views that draw invisible faces (show transparent, highlights with scripted beacons) fall back to full rebuilds
+    (`LLFace::fsCanHideInPlace`). About 60% of shows now happen in place.
+  - **Still rebuilding:** the other ~40% of shows; a sculpty loop (`LLVOVolume::updateTextureVirtualSize` called
+    from `rebuildGeom` queues another rebuild, bursts of 11–14k requests/min); material/texture and LOD changes.
 - **Measuring:** with `FSVBOAllocTrace`, each minute's log has jemalloc's live/active/dirty totals next to the
   process's anon RSS and swap. Active minus anon+swap is heap that isn't really in memory.
 - **Not from this branch:**

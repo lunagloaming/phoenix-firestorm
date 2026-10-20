@@ -34,8 +34,11 @@ A single-process, multi-session viewer was considered and rejected. Session stat
 - **Avatar bake masks:** they were uploaded as GL textures that nothing ever draws with, and one code path leaked them. The upload is skipped now, which saves about 1 GB of driver memory in a crowd, as well as GPU memory.
 - **Vertex buffer CPU copies:** every vertex and index buffer used to keep a system-memory copy of its contents for its whole lifetime. The copy is now freed once a buffer has gone unchanged for 10 seconds, and is read back from the GPU if the buffer ever changes again.
 - **GPU-copy uploads:** geometry is uploaded through a small staging buffer and a GPU-side copy, instead of directly. Scenes load noticeably faster. In a standalone test it also stopped the NVIDIA driver keeping its own system copy of every buffer, but in the viewer that saved only a few hundred MB.
-- **Flexi prims in attachments:** a swaying flexi prim near an octree node boundary inside its attachment crossed it back and forth, and every crossing rebuilt the geometry of both nodes into new vertex buffers. One avatar's attachment rebuilt about 500 MB a minute that way. Objects in attachments, moving linksets and animesh now stay in their node until they are well outside it (`FSOctreeBridgeMoveSlack`), which cut that to about 20 MB a minute.
-- **Colour changes:** every colour change (and, since a 2022 Linden fix, even a plain tint) rebuilt the object's whole group, for an attachment the whole attachment. A change that leaves a face in the same render batch (same alpha class) now updates its vertex colours in place (`FSInPlaceColorUpdates`). Hiding a face (alpha 0) keeps it in its batch with degenerate triangles, and showing it again restores it in place when the batch still fits, so scripted hide/show ("flipbook") animations no longer rebuild the whole attachment. Checked in-world with tint HUDs on mesh and flexi hair, and a test cube cycling opaque, blended and hidden.
+- **Geometry rebuilds:** when anything about an object changes, the viewer rebuilds the geometry of its whole spatial group (for an attachment, usually the whole attachment) into new vertex buffers, and every new buffer makes the NVIDIA driver reserve memory again. Three causes accounted for most of it in a crowd:
+  - **Flexi prims in attachments:** a swaying flexi prim near an octree node boundary inside its attachment crossed it back and forth, and every crossing rebuilt both nodes. Objects in attachments, moving linksets and animesh now stay in their node until they are well outside it (`FSOctreeBridgeMoveSlack`). One avatar's flexi tail went from about 800 rebuilds a minute per group to about 100, the rest mostly level-of-detail changes as the camera moves.
+  - **Colour changes:** every colour change (and, since a 2022 Linden fix, even a plain tint) rebuilt the whole group. A change that leaves a face in the same render batch now updates its vertex colours in place (`FSInPlaceColorUpdates`).
+  - **Scripted hide/show ("flipbook" animations):** hiding a face (alpha 0) now keeps it in its batch with degenerate triangles, and showing it again restores it in place when the batch still fits. A group rebuild within 10 seconds of a hide keeps the face batched, so sibling faces don't keep dropping each other out.
+  - Checked in-world with tint HUDs on mesh and flexi hair, a test cube cycling opaque, blended and hidden (on the ground and worn), and an evening in a crowded region.
 - **Allocator page return (Linux):** the NVIDIA driver reserves heap memory the size of every vertex buffer it creates and never writes most of it. jemalloc's default of keeping freed pages for 10 seconds let those reservations land on pages that were already resident. Freed pages are now returned to the system at once (`FSHeapDecayMs`), which saves about 0.8 GB per viewer in a crowd with no measurable frame-rate cost.
 
 **Outside the viewer: Main/Alt launchers**
@@ -84,8 +87,18 @@ The runs differ in crowd size and settings, so the totals are indicative. The pe
 
 Returning freed pages at once (`FSHeapDecayMs` 0) saves a further 0.8 GB or so. That was measured with two 13-minute runs at the same spot (~75 avatars) that differed only in this setting.
 
+**Geometry rebuilt into new buffers, Main in a crowded region** (`RebuildTrace`, ~70 avatars, minutes 2–13 of 13-minute runs at the same spot; the crowd differs between runs):
+
+| | Before | Now |
+|---|---|---|
+| Volume geometry rebuilt per minute | 0.8–2 GB | 0.3–0.7 GB |
+| Share of it in other avatars' attachments | about 90% | about 90% |
+| Scripted "shows" (alpha 0 → visible) done in place | none | 55–60% |
+| Worst single attachment (flexi) | ~800 rebuilds/min per group, ~500 MB/min | ~100 rebuilds/min, ~20–90 MB/min |
+
 **Still open:**
-- **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Object rebuilds keep creating new buffers, so the reservations keep churning. In a settled crowd about 1–1.5 GB of geometry a minute is still rebuilt, about 90% of it other avatars' attachments. Before the flexi and colour fixes, most of it was flexi prims crossing octree nodes and rigged attachments whose scripts hide and show faces. With both fixed, the same spot rebuilds 0.3–0.7 GB a minute (was 0.8–2 GB), and about 60% of scripted "shows" now happen in place. `glBufferStorage` is still untried.
+- **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Fewer rebuilds should mean less churn of those reservations, but that hasn't been measured yet. `glBufferStorage` is still untried.
+- **Geometry rebuilds that remain:** the other ~40% of scripted shows, a sculpty rebuild loop that bursts to 11–14k requests a minute (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`), material and texture changes, and level-of-detail changes.
 - **Avatar body meshes:** for the first ten minutes or so after arriving in a crowd, the system body meshes are rewritten about 9–10 GB a minute, probably even when they're hidden under mesh bodies.
 - **Mesh geometry** is now the largest item in the viewer's own memory.
 - **An unattributed "operator delete[]" entry**, about 0.8 GB.
@@ -106,8 +119,15 @@ autobuild build     -A 64 -c ReleaseFS_open --no-configure -- --ninja --jobs 10 
 
 When running from the packaged tree (`build-linux-x86_64/newview/packaged/`) or a copy of it, check that `bin/dullahan_host`, `bin/chrome-sandbox` and `bin/SLVoice` are executable (`chmod 755`). A build in a rootless chroot left them at 644, which silently breaks the web login page, profiles, media and voice.
 
+### Next steps
+1. **Re-measure memory** (driver reservations, RSS) with today's rebuild fixes, against the allocator runs.
+2. **The other ~40% of scripted shows:** find which case they hit (hidden longer than 10 s, faces drawn as alpha masks, groups rebuilt for other reasons).
+3. **The sculpty rebuild loop:** a rebuild re-checks the sculpt texture and queues another rebuild.
+4. **Avatar body meshes:** skip updates to system body parts hidden under mesh bodies.
+5. **`glBufferStorage`** for the remaining driver reservations, then **mesh geometry (`LLVolumeFace`)**.
+
 ### Not done (possible future work)
-- Fewer buffer creations on object rebuilds, and skipping updates to hidden avatar body meshes.
+- Skipping updates to hidden avatar body meshes.
 - Reducing mesh geometry held for avatars that aren't fully rendered.
 - Per-thread-pool placement on performance or efficiency cores (beyond the launcher's whole-process pinning for Alt).
 - Idle scheduling priority for housekeeping threads such as cache purging.
