@@ -96,6 +96,8 @@ Returning freed pages at once (`FSHeapDecayMs` 0) saves a further 0.8 GB or so. 
 | Scripted "shows" (alpha 0 → visible) done in place | none | 55–60% |
 | Worst single attachment (flexi) | ~800 rebuilds/min per group, ~500 MB/min | ~100 rebuilds/min, ~20–90 MB/min |
 
+The 55–60% was measured before a fix for faces that were shown in place after a group rebuild but stayed invisible (holes, seen in a card-game HUD). Some of those shows were broken, so the figure needs re-measuring.
+
 **Still open:**
 - **Most of the NVIDIA driver's memory remains:** about 3.5 GB that it reserves when a buffer is created. Fewer rebuilds should mean less churn of those reservations, but that hasn't been measured yet. `glBufferStorage` is still untried.
 - **Geometry rebuilds that remain:** the other ~40% of scripted shows, a sculpty rebuild loop that bursts to 11–14k requests a minute (`LLVOVolume::updateTextureVirtualSize`, called from `rebuildGeom`), material and texture changes, and level-of-detail changes.
@@ -120,7 +122,7 @@ autobuild build     -A 64 -c ReleaseFS_open --no-configure -- --ninja --jobs 10 
 When running from the packaged tree (`build-linux-x86_64/newview/packaged/`) or a copy of it, check that `bin/dullahan_host`, `bin/chrome-sandbox` and `bin/SLVoice` are executable (`chmod 755`). A build in a rootless chroot left them at 644, which silently breaks the web login page, profiles, media and voice.
 
 ### Next steps
-1. **Re-measure memory** (driver reservations, RSS) with today's rebuild fixes, against the allocator runs.
+1. **Re-measure memory** (driver reservations, RSS) with the rebuild fixes, against the allocator runs, and the share of scripted shows done in place.
 2. **The other ~40% of scripted shows:** find which case they hit (hidden longer than 10 s, faces drawn as alpha masks, groups rebuilt for other reasons).
 3. **The sculpty rebuild loop:** a rebuild re-checks the sculpt texture and queues another rebuild.
 4. **Avatar body meshes:** skip updates to system body parts hidden under mesh bodies.

@@ -122,6 +122,28 @@ went wrong:
       }
   }
   ```
+- **Visual check for a show after a group rebuild:** a face hidden in place, a rebuild of its group while it is
+  hidden (here forced by making another face half see-through), then the hidden face shown again. Before
+  `33b5b80ab7` the shown face stayed a hole (first seen as holes in a card-game HUD). Use a plain cube; face 0 is
+  the top and face 1 a side.
+  ```lsl
+  list STEPS = ["all opaque red", 1.0, 1.0, "top HIDDEN", 0.0, 1.0,
+      "side half see-through (forces a rebuild), top still hidden", 0.0, 0.5,
+      "top shown again: red top should be VISIBLE", 1.0, 0.5, "side opaque again", 1.0, 1.0];
+  integer step;
+  default
+  {
+      state_entry() { step = 0; llSetTimerEvent(3.0); }
+      timer()
+      {
+          llSetLinkPrimitiveParamsFast(LINK_THIS, [PRIM_COLOR, ALL_SIDES, <1,0,0>, 1.0,
+              PRIM_COLOR, 0, <1,0,0>, llList2Float(STEPS, step * 3 + 1),
+              PRIM_COLOR, 1, <1,0,0>, llList2Float(STEPS, step * 3 + 2)]);
+          llOwnerSay((string)(step + 1) + ": " + llList2String(STEPS, step * 3));
+          step = (step + 1) % (llGetListLength(STEPS) / 3);
+      }
+  }
+  ```
 - **Comparisons.** The process is named `do-not-directly-run-firestorm-bin`. For baseline-vs-branch runs, restore
   the same starting cache before each run, use the same region and duration, and note crowd size and settings.
 
