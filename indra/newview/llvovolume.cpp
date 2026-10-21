@@ -7003,7 +7003,13 @@ U32 LLVolumeGeometryManager::genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace
                 }
             }
 
-            F32 blinn_phong_alpha = te->getColor().mV[3];
+            //F32 blinn_phong_alpha = te->getColor().mV[3];
+            // <FS:Luna Witch> A face hidden in place moments ago (see rebuildGeom) is batched in the pass it has when
+            // visible, so showing it again in place draws it; with its current alpha 0 it went to the never-drawn
+            // invisible pass, and a shown face stayed a hole until the group was rebuilt again.
+            const bool fs_keep_hidden = facep->fsKeepHiddenInBatch(te);
+            F32 blinn_phong_alpha = fs_keep_hidden ? LLFace::fsClassAlpha(facep->mFSHiddenFromAlphaClass) : te->getColor().mV[3];
+            // </FS:Luna Witch>
             bool use_legacy_bump = te->getBumpmap() && (te->getBumpmap() < 18) && (!mat || mat->getNormalID().isNull());
             bool blinn_phong_opaque = blinn_phong_alpha >= 0.999f;
             bool blinn_phong_transparent = blinn_phong_alpha < 0.999f;
@@ -7169,7 +7175,8 @@ U32 LLVolumeGeometryManager::genDrawInfo(LLSpatialGroup* group, U32 mask, LLFace
             else if (is_alpha)
             {
                 // can we safely treat this as an alpha mask?
-                if (facep->getFaceColor().mV[3] <= 0.f)
+                //if (facep->getFaceColor().mV[3] <= 0.f)
+                if (facep->getFaceColor().mV[3] <= 0.f && !fs_keep_hidden) // <FS:Luna Witch/>
                 { //100% transparent, don't render unless we're highlighting transparent
                     LL_PROFILE_ZONE_NAMED_CATEGORY_VOLUME("facep->alpha -> invisible");
                     registerFace(group, facep, LLRenderPass::PASS_ALPHA_INVISIBLE);
