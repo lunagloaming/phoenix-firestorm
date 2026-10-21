@@ -65,7 +65,8 @@ went wrong:
   - optionally (`FS_MEMPROF=1`) points `FS_JEMALLOC_LIB` at a jemalloc built with profiling, and sets `MALLOC_CONF`
     for heap snapshots
   - Main sets `BackgroundYieldTime 0` and `TextureDiscardBackgroundedTime 0`, so a run behaves the same whether or
-    not the window has focus
+    not the window has focus. The tester keeps Main this "greedy" for daily use too, and runs any avatar on either
+    launcher. Don't rename the modes or change the daily launcher unless asked.
 - **Unattended runs** (only with the tester's go-ahead; see above):
   - `multibox.sh main --autologin --set QuitAfterSeconds 780` logs in with the password saved in the test profile
     and lands at the last location.
